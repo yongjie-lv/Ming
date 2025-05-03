@@ -5,24 +5,18 @@
 <p>
 
 
-This repository provides collections of Ming - support multimodal understanding and generation based on [Ling](https://github.com/inclusionAI/Ling) LLM.
-
-
-The family of Ming:
-- Ming-omni: <p align="center">🤗 <a href="https://huggingface.co/inclusionAI">Hugging Face</a>| 🤖 <a href="https://modelscope.cn/organization/inclusionAI">ModelScope</a>
-- Ming-uug: unified understanding and generation
-
-
-
+This repository provides collections of Ming - facilitating advanced multimodal understanding and generation capabilities built upon the [Ling](https://github.com/inclusionAI/Ling) LLM.
 
 
 ## Introduction
 
-Ling is a MoE LLM provided and open-sourced by InclusionAI. We introduce two different sizes, which are Ling-Lite and Ling-Plus. Ling-Lite has 16.8 billion parameters with 2.75 billion activated parameters, while Ling-Plus has 290 billion parameters with 28.8 billion activated parameters. Both models demonstrate impressive performance compared to existing models in the industry.
+Ming series comprises a range of MLLMs for multi-modal understanding and generation:
+- Ming-Omni: It employs a unified Mixture-of-Experts (MoE) framework for multimodal sequence modeling, which empowers [Ling](https://github.com/inclusionAI/Ling) LLMs to acquire comprehensive cross-modal understanding and generation capabilities. Specifically, Ming-omni can process arbitrary combinations of audio, video, image, and text modalities as input, generating multimodal sequences interleaving with audio, image, or text outputs, thereby enabling an advanced and interactive realtime experience.
+- Ming-Unify: It focuses on realizing a unified paradigm for multi-modal understanding and generation, aiming to extend the image and video generation capabilities while maintaining the multi-modal understanding abilities of MLLM.
 
-Their structure makes it easy to scale up and down and adapt to different tasks, so users can use these models for a wide range of tasks, from processing natural language to solving complex problems. Furthermore, the open-source nature of Ling promotes collaboration and innovation within the AI community, fostering a diverse range of use cases and enhancements.
+We aim to progressively open-source the Ming series of multi-modal models, including not only the models and inference code but also the training code and datasets. This fosters a collaborative environment where researchers and developers can build upon and extend the models, driving innovation in AI applications. Through collaborative efforts with the community, we hope to gradually accelerate the development of the Ming series models, ultimately enabling the development of more advanced and practical AI systems that can tackle complex real-world problems.
 
-As more developers and researchers engage with the platform, we can expect rapid advancements and improvements, leading to even more sophisticated applications. This collaborative approach accelerates development and ensures that the models remain at the forefront of technology, addressing emerging challenges in various fields.
+
 
 ## Contact Information
 
