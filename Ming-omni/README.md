@@ -233,7 +233,7 @@ from models import BailingMMNativeForConditionalGeneration
 
 # build model
 model = BailingMMNativeForConditionalGeneration.from_pretrained(
-    "Ming-Omni-18B-A3-Preview ",
+    "inclusionAI/Ming-Lite-Omni-Preview",
     torch_dtype=torch.bfloat16,
     low_cpu_mem_usage=True
 ).to("cuda")
@@ -241,7 +241,7 @@ model = BailingMMNativeForConditionalGeneration.from_pretrained(
 assets_path = YOUR_ASSETS_PATH
 
 # build processor
-processor = AutoProcessor.from_pretrained("Ming-lite-preview", trust_remote_code=True)
+processor = AutoProcessor.from_pretrained("inclusionAI/Ming-Lite-Omni-Preview", trust_remote_code=True)
 ```
 
 ```python
