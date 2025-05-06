@@ -229,7 +229,7 @@ Please download our model following [Model Downloads](#model-downloads), then yo
 ```python
 import os
 from transformers import AutoProcessor
-from models import BailingMMNativeForConditionalGeneration
+from modeling_bailingmm import BailingMMNativeForConditionalGeneration
 
 # build model
 model = BailingMMNativeForConditionalGeneration.from_pretrained(
