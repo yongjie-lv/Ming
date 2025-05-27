@@ -140,9 +140,9 @@ You can download the model from both Huggingface and ModelScope.
 
 <div align="center">
 
-| **Model**              |   **Input modality**    | **Oput modality** |                                                                            **Download**                                                                            |
-| :--------------------- | :---------------------: | :---------------: | :----------------------------------------------------------------------------------------------------------------------------------------------------------------: |
-| Ming-Lite-Omni-Preview | Image,text,viedio,audio | Image,text,audio  | [🤗 HuggingFace](https://huggingface.co/inclusionAI/Ming-Lite-Omni-Preview) <br>[🤖 ModelScope](https://www.modelscope.cn/models/inclusionAI/Ming-Lite-Omni-Preview) |
+| **Model**              |   **Input modality**    | **Oput modality** |                                                                                     **Download**                                                                                      |
+| :--------------------- | :---------------------: | :---------------: |:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:|
+| Ming-Lite-Omni-Preview | Image,text,viedio,audio | Image,text,audio  | [🤗 HuggingFace](https://huggingface.co/inclusionAI/Ming-Lite-Omni/tree/250504) <br>[🤖 ModelScope](https://www.modelscope.cn/models/inclusionAI/Ming-Lite-Omni/files?version=250504) |
 </div>
 If you're in mainland China, we strongly recommend you to download our model from 🤖 <a href="https://modelscope.cn/organization/inclusionAI">ModelScope</a>.
 
@@ -233,7 +233,7 @@ from modeling_bailingmm import BailingMMNativeForConditionalGeneration
 
 # build model
 model = BailingMMNativeForConditionalGeneration.from_pretrained(
-    "inclusionAI/Ming-Lite-Omni-Preview",
+    "inclusionAI/Ming-Lite-Omni",
     torch_dtype=torch.bfloat16,
     low_cpu_mem_usage=True
 ).to("cuda")
@@ -241,7 +241,7 @@ model = BailingMMNativeForConditionalGeneration.from_pretrained(
 assets_path = YOUR_ASSETS_PATH
 
 # build processor
-processor = AutoProcessor.from_pretrained("inclusionAI/Ming-Lite-Omni-Preview", trust_remote_code=True)
+processor = AutoProcessor.from_pretrained("inclusionAI/Ming-Lite-Omni", trust_remote_code=True)
 ```
 
 ```python
