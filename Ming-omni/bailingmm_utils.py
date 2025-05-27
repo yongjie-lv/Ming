@@ -170,7 +170,7 @@ def sample_frames(num_frames, total_frames, sample="random"):
                 padded_frame_indices = [frame_indices[-1]] * num_frames
                 padded_frame_indices[:len(frame_indices)] = frame_indices
                 frame_indices = padded_frame_indices
-        elif sample == "uniform":
+        elif sample == "uniform" or sample == "adaptive":
             frame_indices = [(x[0] + x[1]) // 2 for x in ranges]
             if len(frame_indices) < num_frames:
                 frame_indices = [
@@ -268,18 +268,84 @@ def _read_video_decord(
     total_frames, video_fps = len(vr), vr.get_avg_fps()
     logger.info(f"decord:  {video_path=}, {total_frames=}, {video_fps=}, time={time.time() - st:.3f}s")
 
-    sample_method = ele.get("sample", "uniform")
+    sample_method = ele.get("sample", "sequence")
     # if sample_method == "sequence":
     #    total_frames = int(total_frames / video_fps * 2)
-    num_frames = get_frames(ele, int(total_frames / video_fps * 2))
+    if video_fps > 2.0 and total_frames / float(video_fps) > 5.0:
+        num_frames = get_frames(ele, int(total_frames / float(video_fps) * 2))
+    else:
+        num_frames = get_frames(ele, total_frames)
     frame_indices = sample_frames(
         num_frames=num_frames, total_frames=total_frames, sample=sample_method
     )
+    if sample_method == "adaptive" and len(frame_indices) > 64:
+        frames_indices_selected = select_frames_based_on_query(vr, frame_indices, ele)  # query的扩模态采样结果
+        indices = np.linspace(0, len(frame_indices) - 1, len(frame_indices)//2, dtype=int)
+        frame_indices = np.array(frame_indices)[indices].tolist()
+        frames_indices_selected_sort = np.sort(frame_indices + frames_indices_selected[:(num_frames - len(frame_indices))].tolist()).tolist()
+        video = vr.get_batch(frames_indices_selected_sort).asnumpy()
+    else:
+        video = vr.get_batch(frame_indices).asnumpy()
 
-    video = vr.get_batch(frame_indices).asnumpy()
+    # video = vr.get_batch(frame_indices).asnumpy()
     video = torch.tensor(video).permute(0, 3, 1, 2)  # Convert to TCHW format
     sample_fps = num_frames / max(total_frames, 1e-6) * video_fps
     return video, sample_fps
+
+def select_frames_based_on_query(vr, frame_indices, ele):
+    import sys
+    sys.path.join("./longvu")
+    '''
+    This LongVU model (https://github.com/Vision-CAIR/LongVU) computes cross-modal relevance 
+    between user queries and video frames for the purpose of frame selection.
+    It can also be replaced with other text/visual encoders to achieve the same effect.
+    To maintain consistency in the repository structure, this module has not been included in the repository directory for now.
+    If needed for evaluation, simply import this module.
+    '''
+    from longvu.constants import (
+        DEFAULT_IMAGE_TOKEN,
+        IMAGE_TOKEN_INDEX,
+    )
+    from longvu.conversation import conv_templates, SeparatorStyle
+    from longvu.mm_datautils import (
+        KeywordsStoppingCriteria,
+        process_images,
+        tokenizer_image_token,
+    )
+    tokenizer, model, image_processor = ele["tokenizer"], ele["model"], ele["image_processor"]
+    
+    # 考虑在这里扩展frame_indices
+    video = vr.get_batch(frame_indices).asnumpy()  # (21, 320, 568, 3)
+    
+    image_sizes = [video[0].shape[:2]]  # [(320, 568)]
+    video = process_images(video, image_processor, model.config)  # len(video)=2, 第一个 torch.Size([623, 3, 384, 384])，第二个 torch.Size([623, 3, 378, 378])
+    video = [item.unsqueeze(0) for item in video] # len(video)=2, 第一个 torch.Size([1, 623, 3, 384, 384])，第二个 torch.Size([1, 623, 3, 378, 378])
+    
+    qs = DEFAULT_IMAGE_TOKEN + "\n" + ele["text"]
+    conv = conv_templates["qwen"].copy()
+    conv.append_message(conv.roles[0], qs)
+    conv.append_message(conv.roles[1], None)
+    prompt = conv.get_prompt()
+    
+    input_ids = tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").unsqueeze(0).to(model.device)  # torch.Size([1, 26])
+    stop_str = conv.sep if conv.sep_style != SeparatorStyle.TWO else conv.sep2  # '<|im_end|>'
+    keywords = [stop_str]
+    stopping_criteria = KeywordsStoppingCriteria(keywords, tokenizer, input_ids)
+    
+    with torch.inference_mode():
+        output_ids = model.generate(
+            input_ids,
+            images=video,
+            image_sizes=image_sizes,
+            do_sample=False,
+            temperature=0.2,
+            max_new_tokens=128,
+            use_cache=True,
+            stopping_criteria=[stopping_criteria],
+        )  # torch.Size([1, 128])
+    
+    selected_indices = np.array(frame_indices)[output_ids.cpu().numpy()]
+    return selected_indices
 
 VIDEO_READER_BACKENDS = {
     "decord": _read_video_decord,
@@ -353,14 +419,19 @@ def fetch_video(ele: dict, image_factor: int = IMAGE_FACTOR, return_video_sample
             fetch_image({"image": video_element, **process_info}, size_factor=image_factor)
             for video_element in ele["video"]
         ]
-        if len(images) > ele["max_frames"]:
-                num_frames_target = ele["max_frames"]
-                print(ele["max_frames"])
-                interval = len(images) // num_frames_target  # 计算抽取间隔
-                images = [images[i] for i in range(0, len(images), interval)][:num_frames_target]
+        # if len(images) > ele["max_frames"]:
+        #         num_frames_target = ele["max_frames"]
+        #         print(ele["max_frames"])
+        #         interval = len(images) // num_frames_target  # 计算抽取间隔
+        #         images = [images[i] for i in range(0, len(images), interval)][:num_frames_target]
         num_frames = ceil_by_factor(len(images), FRAME_FACTOR)
         if len(images) < num_frames:
             images.extend([images[-1]] * (num_frames - len(images)))
+        if len(images) > ele["max_frames"]:
+            frame_indices = sample_frames(
+                num_frames=ele["max_frames"], total_frames=len(images), sample="uniform",
+            )
+            images = [images[i] for i in frame_indices]
         if return_video_sample_fps:
             return images, process_info.pop("sample_fps", 2.0)
         return images
@@ -402,6 +473,19 @@ def extract_vision_info(conversations: list[dict] | list[list[dict]]) -> list[di
                             or ele["type"] in ("image", "image_url", "video")
                     ):
                         vision_infos.append(ele)
+                    # 把视频的 query_text 也加进来
+                    if "text" in ele: text = ele["text"]
+                    if "video" in ele and ele["sample"] == "adaptive":
+                        tokenizer = ele["tokenizer"]
+                        model = ele["model"]
+                        image_processor = ele["image_processor"]
+    for ele in vision_infos:
+        if "video" in ele and ele["sample"] == "adaptive":
+            ele["text"] = text
+            ele["tokenizer"] = tokenizer
+            ele["model"] = model
+            ele["image_processor"] = image_processor
+    return vision_infos
     return vision_infos
 
 def process_vision_info(
@@ -421,6 +505,11 @@ def process_vision_info(
             else:
                 image_inputs.append(fetch_image(vision_info))
         elif "video" in vision_info or "video_url" in vision_info:
+            if is_video(vision_info['video']):
+                data_value = vision_info['video']
+            else:
+                data_value = [os.path.join(vision_info['video'], frame) for frame in os.listdir(vision_info['video'])]
+            vision_info['video']=data_value
             video_inputs.append(fetch_video(vision_info))
         elif "audio" in vision_info or "audio_url" in vision_info:
             if isinstance(vision_info["audio"], (tuple, list)):

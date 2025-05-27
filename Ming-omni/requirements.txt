@@ -4,12 +4,11 @@ torchaudio==2.1.2
 funasr==1.1.14
 flash-attn==2.3.6
 peft==0.13.2
-diffusers==0.30.3
+diffusers #==0.33
 tokenizers==0.20.3
 transformers==4.45.0
 grouped_gemm==0.1.4
 decord==0.6.0
-# 语音依赖
 hyperpyyaml
 modelscope
 onnxruntime
@@ -18,3 +17,4 @@ conformer
 diffusers
 lightning
 gdown
+openai-whisper==20240930

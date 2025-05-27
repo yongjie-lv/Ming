@@ -36,9 +36,9 @@ class AudioDetokenizerModel:
         self.hift.load_state_dict(torch.load(hift_model, map_location=self.device))
         self.hift.to(self.device).eval()
 
-    def inference(self, flow_embedding, tts_speech_token,
-                  flow_prompt_speech_token=torch.zeros(1, 0, dtype=torch.int32), flow_prompt_speech_token_len=torch.zeros(1, dtype=torch.int32),
-                  prompt_speech_feat=torch.zeros(1, 0, 80), prompt_speech_feat_len=torch.zeros(1, dtype=torch.int32), is_en=False):
+    def inference(self, vp_emb, tts_speech_token,
+                  prompt_speech_token=torch.zeros(1, 0, dtype=torch.int32), prompt_speech_token_len=torch.zeros(1, dtype=torch.int32),
+                  prompt_speech_feat=torch.zeros(1, 0, 80), prompt_speech_feat_len=torch.zeros(1, dtype=torch.int32), is_en=False, **kwargs):
 
         torch.cuda.synchronize()
         t0 = time.time()
@@ -48,11 +48,11 @@ class AudioDetokenizerModel:
         
         tts_mel = self.flow.inference(token=tts_speech_token.to(self.device),
                                       token_len=torch.tensor([tts_speech_token.size(1)], dtype=torch.int32).to(self.device),
-                                      prompt_token=flow_prompt_speech_token.to(self.device),
-                                      prompt_token_len=flow_prompt_speech_token_len.to(self.device),
+                                      prompt_token=prompt_speech_token.to(self.device),
+                                      prompt_token_len=prompt_speech_token_len.to(self.device),
                                       prompt_feat=prompt_speech_feat.to(self.device),
                                       prompt_feat_len=prompt_speech_feat_len.to(self.device),
-                                      embedding=flow_embedding.to(self.device).to(self.dtype)).float()
+                                      embedding=vp_emb.to(self.device).to(self.dtype)).float()
         torch.cuda.synchronize()
 
         tts_speech = self.hift.inference(mel=tts_mel).cpu()
