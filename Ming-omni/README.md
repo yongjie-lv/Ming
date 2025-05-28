@@ -35,7 +35,7 @@ Notably, Ming-lite-omni is the first open-source model we are aware of to match 
 
 
 ##  Evaluation
-Ming-lite-omni delivers exceptional cross-modal performance, as validated across image perception, audio-visual interaction, and image generation tasks. Specifically, in the image perception task, Ming-lite-omni attained performance comparable to that of Qwen2.5-VL-7B~\citep{bai2025qwen25vltechnicalreport} by activating only 2.8B parameters. It delivers superior performance in end-to-end speech understanding and instruction following, surpassing Qwen2.5-Omni and Kimi-Audio. It also supports native-resolution image generation, editing, and style transfer, achieving a GenEval score of 0.64, outperforming mainstream models such as SDXL~\citep{podell2023sdxl}. In terms of FID, Ming-lite-omni reaches 4.85, setting a new SOTA across existing methods.
+Ming-lite-omni delivers exceptional cross-modal performance, as validated across image perception, audio-visual interaction, and image generation tasks. Specifically, in the image perception task, Ming-lite-omni attained performance comparable to that of Qwen2.5-VL-7B by activating only 2.8B parameters. It delivers superior performance in end-to-end speech understanding and instruction following, surpassing Qwen2.5-Omni and Kimi-Audio. It also supports native-resolution image generation, editing, and style transfer, achieving a GenEval score of 0.64, outperforming mainstream models such as SDXL. In terms of FID, Ming-lite-omni reaches 4.85, setting a new SOTA across existing methods.
 <p align="center">
     <img src="./figures/performance.png" width="800"/>
 <p>
@@ -152,8 +152,9 @@ Note: All models are evaluated based on 128 uniformly sampled frames.
 | ScreenSpot                 |  <b>82.1</b>   |     79.5     |         78.9*          |
 | ScreenSpot-V2              |  <b>84.1</b>   |     81.4     |           -            |
 | AITZ(EM)                   |  <b>66.6</b>   |      -       |         57.6*          |
-Note: * denotes the reproduced results.
 </div>
+Note: * denotes the reproduced results.
+
 
 
 ### Unified Generation Benchmark
