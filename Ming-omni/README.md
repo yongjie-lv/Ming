@@ -161,15 +161,15 @@ Note: * denotes the reproduced results.
 
 <div align="center">
 
-| Model          | single_object | two_object  |  counting  |  colors  | position | color_attr | GENEVAL  | DPGBench  |     FID↓      |
-|:---------------|:-------------:|:-----------:|:----------:|:--------:|:--------:|:----------:|:--------:|:---------:|:-------------:|
-| Ming-lite-omni |  **0.9875**   | ** 0.7727** | **0.6812** |  0.7872  |   0.31   |    0.29    | **0.64** |   81.72   |   **4.85**    |
-| Metaquery-XL   |       -       |      -      |     -      |    -     |    -     |     -      |   0.61   | **82.05** |     6.02      |
-| SDv2.1         |     0.98      |    0.51     |    0.44    | **0.85** |   0.07   |    0.17    |   0.50   |   68.09   |     26.96     |
-| Emu3-Gen       |     0.98      |    0.71     |    0.34    |   0.81   |   0.17   |    0.21    |   0.54   |   80.60   |       -       |
-| SDXL           |     0.98      |    0.74     |    0.39    | **0.85** |   0.15   |    0.23    |   0.55   |   74.65   |     8.76      |
-| Janus          |     0.97      |    0.68     |    0.30    |   0.84   | **0.46** |  **0.42**  |   0.61   |   79.68   |     10.10     |
-| JanusFlow      |       -       |      -      |     -      |    -     |    -     |     -      |   0.63   |   80.09   |     9.51      |
+| Model          | single_object | two_object |  counting  |  colors  | position | color_attr | GENEVAL  | DPGBench  |     FID↓      |
+|:---------------|:-------------:|:----------:|:----------:|:--------:|:--------:|:----------:|:--------:|:---------:|:-------------:|
+| Ming-lite-omni |  **0.9875**   | **0.7727** | **0.6812** |  0.7872  |   0.31   |    0.29    | **0.64** |   81.72   |   **4.85**    |
+| Metaquery-XL   |       -       |     -      |     -      |    -     |    -     |     -      |   0.61   | **82.05** |     6.02      |
+| SDv2.1         |     0.98      |    0.51    |    0.44    | **0.85** |   0.07   |    0.17    |   0.50   |   68.09   |     26.96     |
+| Emu3-Gen       |     0.98      |    0.71    |    0.34    |   0.81   |   0.17   |    0.21    |   0.54   |   80.60   |       -       |
+| SDXL           |     0.98      |    0.74    |    0.39    | **0.85** |   0.15   |    0.23    |   0.55   |   74.65   |     8.76      |
+| Janus          |     0.97      |    0.68    |    0.30    |   0.84   | **0.46** |  **0.42**  |   0.61   |   79.68   |     10.10     |
+| JanusFlow      |       -       |     -      |     -      |    -     |    -     |     -      |   0.63   |   80.09   |     9.51      |
 
 </div>
 
@@ -184,7 +184,7 @@ You can download the model from both Huggingface and ModelScope.
 
 | **Model**      |   **Input modality**    | **Oput modality** |                                                                     **Download**                                                                     |
 |:---------------| :---------------------: | :---------------: |:----------------------------------------------------------------------------------------------------------------------------------------------------:|
-| Ming-lite-Omni | Image,text,viedio,audio | Image,text,audio  | [🤗 HuggingFace](https://huggingface.co/inclusionAI/Ming-Lite-Omni) <br>[🤖 ModelScope](https://www.modelscope.cn/models/inclusionAI/Ming-Lite-Omni) |
+| Ming-Lite-Omni | Image,text,viedio,audio | Image,text,audio  | [🤗 HuggingFace](https://huggingface.co/inclusionAI/Ming-Lite-Omni) <br>[🤖 ModelScope](https://www.modelscope.cn/models/inclusionAI/Ming-Lite-Omni) |
 </div>
 If you're in mainland China, we strongly recommend you to download our model from 🤖 <a href="https://www.modelscope.cn/models/inclusionAI/Ming-Lite-Omni">ModelScope</a>.
 
