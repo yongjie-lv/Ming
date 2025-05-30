@@ -194,7 +194,9 @@ If you're in mainland China, we strongly recommend you to download our model fro
 Additional demonstration cases are available on our project [page](https://lucaria-academy.github.io/Ming-Omni/).
 
 
+## Hardware Requirement
 
+We test following examples on hardware of NVIDIA H800-80GB with CUDA 12.2. Loading inclusionAI/Ming-Lite-Omni in bfloat16 takes about 40890MB memory.
 
 ## Example Usage
 
