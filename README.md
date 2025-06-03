@@ -4,7 +4,7 @@
     <img src="./figures/ant-bailing.png" width="100"/>
 <p>
 
-<p align="center">📑 <a href="https://github.com/inclusionAI/Ming/Ming_Omni.pdf">Technical Report</a>｜📖<a href="https://lucaria-academy.github.io/Ming-Omni/">Project Page</a> ｜🤗 <a href="https://huggingface.co/inclusionAI/Ming-Lite-Omni">Hugging Face</a>｜ 🤖 <a href="https://www.modelscope.cn/models/inclusionAI/Ming-Lite-Omni">ModelScope</a>
+<p align="center">📑 <a href="https://github.com/inclusionAI/Ming/blob/main/Ming_Omni.pdf">Technical Report</a>｜📖<a href="https://lucaria-academy.github.io/Ming-Omni/">Project Page</a> ｜🤗 <a href="https://huggingface.co/inclusionAI/Ming-Lite-Omni">Hugging Face</a>｜ 🤖 <a href="https://www.modelscope.cn/models/inclusionAI/Ming-Lite-Omni">ModelScope</a>
 
 
 
