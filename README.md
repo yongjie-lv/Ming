@@ -4,7 +4,7 @@
     <img src="./figures/ant-bailing.png" width="100"/>
 <p>
 
-<p align="center">📑 <a href="https://github.com/inclusionAI/Ming/blob/main/Ming_Omni.pdf">Technical Report</a>｜📖<a href="https://lucaria-academy.github.io/Ming-Omni/">Project Page</a> ｜🤗 <a href="https://huggingface.co/inclusionAI/Ming-Lite-Omni">Hugging Face</a>｜ 🤖 <a href="https://www.modelscope.cn/models/inclusionAI/Ming-Lite-Omni">ModelScope</a>
+<p align="center">📑 <a href="https://arxiv.org/abs/2506.09344">Technical Report</a>｜📖<a href="https://lucaria-academy.github.io/Ming-Omni/">Project Page</a> ｜🤗 <a href="https://huggingface.co/inclusionAI/Ming-Lite-Omni">Hugging Face</a>｜ 🤖 <a href="https://www.modelscope.cn/models/inclusionAI/Ming-Lite-Omni">ModelScope</a>
 
 
 
@@ -531,11 +531,14 @@ This code repository is licensed under the [MIT License](../LICENSE), and the Le
 If you find our work helpful, feel free to give us a cite.
 
 ```bibtex
-@article{Mingomni2025,
-    title   = {Ming-Omni: A Unified Multimodal Model for Perception and Generation},
-    author  = {Inclusion AI},
-    journal = {arXiv preprint},
-    year    = {2025}
+
+@misc{Mingomni2025,
+      title  = {Ming-Omni: A Unified Multimodal Model for Perception and Generation}, 
+      author = {Inclusion AI},
+      year = {2025},
+      eprint = {2506.09344},
+      archivePrefix = {arXiv},
+      url = {https://arxiv.org/abs/2506.09344}
 }
 ```
 
