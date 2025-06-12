@@ -20,7 +20,7 @@ Notably, Ming-lite-omni is the first open-source model we are aware of to match 
 
 ## 📌 Updates
 
-[//]: # (* [2025.05.28] 🔥 Our [Technical Report]&#40;https://arxiv.org/pdf/2505.02471&#41; is in public on arxiv.)
+* [2025.06.12] 🔥 Our [Technical Report](https://arxiv.org/abs/2506.09344) is in public on arxiv.
 * [2025.05.28] 🔥 The official version of Ming-lite-omni is released, with better performance and image generation support.
 * [2025.05.04] 🔥 We release the test version of Ming-lite-omni：[Ming-lite-omni-Preview](https://github.com/inclusionAI/Ming/tree/Ming-Lite-Omni-Preview).
 
