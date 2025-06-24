@@ -207,6 +207,11 @@ pip install nvidia-cublas-cu12==12.4.5.8  # for H20
 ```
 Note: We test following examples on hardware of NVIDIA H800-80GB with CUDA 12.2. Loading inclusionAI/Ming-Lite-Omni in bfloat16 takes about 40890MB memory.
 
+You can also initialize the environment by building the docker image:
+```shell
+docker build -t ming:py310-cu121 docker/docker-py310-cu121
+docker run -it --gpus all ming:py310-cu121 /bin/bash
+```
 
 
 ```python
