@@ -8,6 +8,8 @@ from transformers import (
 )
 
 from modeling_bailingmm import BailingMMNativeForConditionalGeneration
+from audio_detokenizer.cli.frontend import TTSFrontEnd
+from hyperpyyaml import load_hyperpyyaml
 
 
 import warnings
@@ -35,6 +37,14 @@ class BailingMMInfer:
             f'{self.model_name_or_path}/talker/audio_detokenizer.yaml',
             flow_model_path=f'{self.model_name_or_path}/talker/flow.pt',
             hifigan_model_path=f'{self.model_name_or_path}/talker/hift.pt'
+        )
+
+        with open(f'{self.model_name_or_path}/talker/audio_detokenizer.yaml', 'r') as f:
+            configs = load_hyperpyyaml(f)
+        self.audio_frontend = TTSFrontEnd(
+            configs["feat_extractor"],
+            f'{self.model_name_or_path}/talker/campplus.onnx',
+            f'{self.model_name_or_path}/talker/speech_tokenizer_v1.onnx',
         )
         self.spk_info = {
             'luna': torch.load('data/spks/luna.pt')
@@ -100,6 +110,12 @@ class BailingMMInfer:
             return output_text, waveform
         return output_text
 
+    def generate_tts(self, tts_text, prompt_text, prompt_wav_path, output_audio_path=None):
+        spk_input = self.audio_frontend.frontend_zero_shot(prompt_text, prompt_wav_path)
+        audio_tokens = self.model.talker.omni_audio_generation(tts_text, **spk_input)
+        waveform = self.audio_detokenizer.token2wav(audio_tokens, save_path=output_audio_path, **spk_input)
+        return waveform
+
 
 if __name__ == '__main__':
     max_new_tokens = 512
@@ -142,3 +158,6 @@ if __name__ == '__main__':
     outputs = model.generate(messages, max_new_tokens=max_new_tokens, speaker='luna', output_audio_path='out.wav', output_audio=True)
 
     print(outputs)
+
+    # zero-shot tts
+    outputs = model.generate_tts(tts_text="这是一条测试语句。", prompt_text="感谢你的认可。", prompt_wav_path="data/spks/prompt.wav", output_audio_path="out.wav")
