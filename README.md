@@ -448,6 +448,34 @@ audio_tokens = model.talker.omni_audio_generation(
 waveform = audio_detokenizer.token2wav(audio_tokens, save_path='out.wav', **spk_input)
 
 ```
+
+```python
+# zero-shot TTS
+from modeling_bailing_talker import AudioDetokenizer
+from audio_detokenizer.cli.frontend import TTSFrontEnd
+from hyperpyyaml import load_hyperpyyaml
+
+model_name_or_path = model.config._name_or_path
+audio_detokenizer = AudioDetokenizer(
+    f'{model_name_or_path}/talker/audio_detokenizer.yaml',
+    flow_model_path=f'{model_name_or_path}/talker/flow.pt',
+    hifigan_model_path=f'{model_name_or_path}/talker/hift.pt'
+)
+
+with open(f'{model_name_or_path}/talker/audio_detokenizer.yaml', 'r') as f:
+    configs = load_hyperpyyaml(f)
+audio_frontend = TTSFrontEnd(
+    configs["feat_extractor"],
+    f'{model_name_or_path}/talker/campplus.onnx',
+    f'{model_name_or_path}/talker/speech_tokenizer_v1.onnx',
+)
+
+tts_text = "这是一条测试语句。"
+spk_input = audio_frontend.frontend_zero_shot(prompt_text="感谢你的认可。", prompt_wav_path="data/spks/prompt.wav")
+audio_tokens = model.talker.omni_audio_generation(tts_text, **spk_input)
+waveform = audio_detokenizer.token2wav(audio_tokens, save_path='out.wav', **spk_input)
+```
+
 For detailed usage for ASR, SpeechQA, and TTS tasks, please refer to `test_audio_tasks.py`
 
 ### Image Generation & Edit
