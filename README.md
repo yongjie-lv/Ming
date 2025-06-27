@@ -194,7 +194,7 @@ If you're in mainland China, we strongly recommend you to download our model fro
 Additional demonstration cases are available on our project [page](https://lucaria-academy.github.io/Ming-Omni/).
 
 
-## Example Usage
+## Installation
 
 Please download our model following [Model Downloads](#model-downloads), then you can refer to the following codes to run Ming-lite-omni model.
 
@@ -208,6 +208,27 @@ pip install nvidia-cublas-cu12==12.4.5.8  # for H20
 Note: We test following examples on hardware of NVIDIA H800-80GB with CUDA 12.2. Loading inclusionAI/Ming-Lite-Omni in bfloat16 takes about 40890MB memory.
 
 
+## Installation with docker
+
+You can also initialize the environment by building the docker image. First clone this repository:
+```shell
+git clone --depth 1 https://github.com/inclusionAI/Ming.git
+cd Ming
+```
+Then build the docker image with the provided Dockerfile in `docker/docker-py310-cu121`. This step might take a while:
+```shell
+docker build -t ming:py310-cu121 docker/docker-py310-cu121
+```
+At last, start the container with the current repo directory mounted:
+```shell
+docker run -it --gpus all -v "$(pwd)":/workspace/Ming ming:py310-cu121 ming:py310-cu121 /bin/bash
+```
+You can run the model with python interface. You may download the huggingface model in the repo directory first (`.../Ming/`) or mount the downloaded model path when starting the container.
+
+
+## Example Usage
+
+We provide a small example on the usage of this repo. For detailed usage, please refer to [this notebook](./examples/demo.ipynb).
 
 ```python
 import os
@@ -222,13 +243,9 @@ model = BailingMMNativeForConditionalGeneration.from_pretrained(
     low_cpu_mem_usage=True
 ).to("cuda")
 
-assets_path = YOUR_ASSETS_PATH
-
 # build processor
 processor = AutoProcessor.from_pretrained("inclusionAI/Ming-Lite-Omni", trust_remote_code=True)
-```
 
-```python
 # qa
 messages = [
     {
@@ -238,99 +255,14 @@ messages = [
         ],
     },
 ]
-# Output:
 
-# 鹦鹉是一种非常聪明和社交性强的鸟类，它们的生活习性非常丰富和有趣。以下是一些关于鹦鹉生活习性的详细介绍：
-# ### 1. **栖息地**
-# 鹦鹉主要分布在热带和亚热带地区，包括非洲、亚洲、澳大利亚和南美洲。它们通常生活在森林、草原、沙漠和城市环境中。不同种类的鹦鹉对栖息地的要求有所不同，但大多数鹦鹉喜欢有丰富植被和水源的地方。
-# ### 2. **饮食**
-# 鹦鹉是杂食性动物，它们的饮食非常多样化。它们的食物包括种子、坚果、水果、蔬菜、花蜜和昆虫。鹦鹉的喙非常强壮，能够轻松地打开坚硬的果壳和坚果。一些鹦鹉还会吃泥土或沙子，以帮助消化和补充矿物质。
-# ......
-
-```
-
-```python
-# image qa
-messages = [
-    {
-        "role": "HUMAN",
-        "content": [
-            {"type": "image", "image": os.path.join(assets_path, "flowers.jpg")},
-            {"type": "text", "text": "What kind of flower is this?"},
-        ],
-    },
-]
-# Output:
-
-# The flowers in this image are forget-me-nots. These delicate blooms are known for their small, five-petaled flowers that come in various shades of blue, pink, and white. 
-```
-
-To enable thinking before response, adding the following system prompt before your question:
-
-```python
-cot_prompt = "SYSTEM: You are a helpful assistant. When the user asks a question, your response must include two parts: first, the reasoning process enclosed in <thinking>...</thinking> tags, then the final answer enclosed in <answer>...</answer> tags. The critical answer or key result should be placed within \\boxed{}.\n"
-# And your input message should be like this:
-messages = [
-    {
-        "role": "HUMAN",
-        "content": [
-            {"type": "image", "image": os.path.join(assets_path, "reasoning.png")},
-            {"type": "text", "text": cot_prompt + "In the rectangle $A B C D$ pictured, $M_{1}$ is the midpoint of $D C, M_{2}$ the midpoint of $A M_{1}, M_{3}$ the midpoint of $B M_{2}$ and $M_{4}$ the midpoint of $C M_{3}$. Determine the ratio of the area of the quadrilateral $M_{1} M_{2} M_{3} M_{4}$ to the area of the rectangle $A B C D$.\nChoices:\n(A) $\frac{7}{16}$\n(B) $\frac{3}{16}$\n(C) $\frac{7}{32}$\n(D) $\frac{9}{32}$\n(E) $\frac{1}{5}$"},
-        ],
-    },
-]
-# Output:
-# \<think\>\nOkay, so I have this problem about a rectangle ABCD ... (thinking process omitted) ... So, the correct answer is C.\n\</think\>\n\<answer\>\\boxed{C}\</answer\>\n\n
-```
-
-```python
-# video qa
-messages = [
-    {
-        "role": "HUMAN",
-        "content": [
-            {"type": "video", "video": os.path.join(assets_path, "yoga.mp4")},
-            {"type": "text", "text": "What is the woman doing?"},
-        ],
-    },
-]
-# Output:
-
-# The image shows a woman performing a yoga pose on a rooftop. She's in a dynamic yoga pose, with her arms and legs extended in various positions.
-
-```
-
-```python
-# multi-turn chat
-messages = [
-    {
-        "role": "HUMAN",
-        "content": [
-            {"type": "text", "text": "中国的首都是哪里？"},
-        ],
-    },
-    {
-        "role": "ASSISTANT",
-        "content": [
-            {"type": "text", "text": "北京"},
-        ],
-    },
-    {
-        "role": "HUMAN",
-        "content": [
-            {"type": "text", "text": "它的占地面积是多少？有多少常住人口？"},
-        ],
-    },
-]
-# Output:
-
-# 北京市的总面积约为16,410.54平方公里，常住人口约为21,542,000人。
-```
-
-```python
-# Preparation for inference
+# 1. Format inputs using chat template
 text = processor.apply_chat_template(messages, add_generation_prompt=True)
+
+# 2. Extract vision/audio data
 image_inputs, video_inputs, audio_inputs = processor.process_vision_info(messages)
+
+# 3. Prepare tensor inputs
 inputs = processor(
     text=[text],
     images=image_inputs,
@@ -343,7 +275,7 @@ for k in inputs.keys():
     if k == "pixel_values" or k == "pixel_values_videos" or k == "audio_feats":
         inputs[k] = inputs[k].to(dtype=torch.bfloat16)
 
-# call generate
+# 4. Configure generation
 generation_config = GenerationConfig.from_dict({'no_repeat_ngram_size': 10})
 generated_ids = model.generate(
     **inputs,
@@ -355,204 +287,26 @@ generated_ids = model.generate(
 generated_ids_trimmed = [
         out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
     ]
+
+# 5. Decode output
 output_text = processor.batch_decode(
     generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
 )[0]
 print(output_text)
-```
+# Output:
 
-### Audio tasks
-
-```python
-# ASR
-messages = [
-    {
-        "role": "HUMAN",
-        "content": [
-            {"type": "text", "text": "Please recognize the language of this speech and transcribe it. Format: oral."},
-            {"type": "audio", "audio": 'data/wavs/BAC009S0915W0292.wav'},
-        ],
-    },
-]
-# we use whisper encoder for ASR task, so need modify code above
-inputs = processor(
-    text=[text],
-    images=image_inputs,
-    videos=video_inputs,
-    audios=audio_inputs,
-    return_tensors="pt",
-    audio_kwargs={'use_whisper_encoder': True}
-)
-
-outputs = model.generate(
-    **inputs,
-    max_new_tokens=512,
-    use_cache=True,
-    eos_token_id=processor.gen_terminator,
-    generation_config=generation_config,
-    use_whisper_encoder=True
-)
-
-```
-
-```python
-# speech2speech
-messages = [
-    {
-        "role": "HUMAN",
-        "content": [
-            {"type": "audio", "audio": 'data/wavs/speechQA_sample.wav'},
-        ],
-    },
-]
-generation_config = GenerationConfig.from_dict({
-    'output_hidden_states': True,
-    'return_dict_in_generate': True,
-    'no_repeat_ngram_size': 10}
-)
-
-outputs = model.generate(
-    **inputs,
-    max_new_tokens=512,
-    use_cache=True,
-    eos_token_id=processor.gen_terminator,
-    generation_config=generation_config,
-    use_whisper_encoder=False
-)
-
-generated_ids = outputs.sequences
-generated_ids_trimmed = [
-    out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
-]
-
-# speechQA result
-output_text = processor.batch_decode(
-    generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
-)[0]
-
-# for TTS
-from modeling_bailing_talker import AudioDetokenizer
-
-model_name_or_path = model.config._name_or_path
-audio_detokenizer = AudioDetokenizer(
-    f'{model_name_or_path}/talker/audio_detokenizer.yaml',
-    flow_model_path=f'{model_name_or_path}/talker/flow.pt',
-    hifigan_model_path=f'{model_name_or_path}/talker/hift.pt'
-)
-spk_input = torch.load('data/spks/luna.pt')
-thinker_reply_part = outputs.hidden_states[0][0] + outputs.hidden_states[0][-1]
-# Setting thinker_reply_part to None allows the talker to operate as a standalone TTS model, independent of the language model.
-audio_tokens = model.talker.omni_audio_generation(
-    output_text, 
-    thinker_reply_part=thinker_reply_part, **spk_input)
-waveform = audio_detokenizer.token2wav(audio_tokens, save_path='out.wav', **spk_input)
-
-```
-
-```python
-# zero-shot TTS
-from modeling_bailing_talker import AudioDetokenizer
-from audio_detokenizer.cli.frontend import TTSFrontEnd
-from hyperpyyaml import load_hyperpyyaml
-
-model_name_or_path = model.config._name_or_path
-audio_detokenizer = AudioDetokenizer(
-    f'{model_name_or_path}/talker/audio_detokenizer.yaml',
-    flow_model_path=f'{model_name_or_path}/talker/flow.pt',
-    hifigan_model_path=f'{model_name_or_path}/talker/hift.pt'
-)
-
-with open(f'{model_name_or_path}/talker/audio_detokenizer.yaml', 'r') as f:
-    configs = load_hyperpyyaml(f)
-audio_frontend = TTSFrontEnd(
-    configs["feat_extractor"],
-    f'{model_name_or_path}/talker/campplus.onnx',
-    f'{model_name_or_path}/talker/speech_tokenizer_v1.onnx',
-)
-
-tts_text = "这是一条测试语句。"
-spk_input = audio_frontend.frontend_zero_shot(prompt_text="感谢你的认可。", prompt_wav_path="data/spks/prompt.wav")
-audio_tokens = model.talker.omni_audio_generation(tts_text, **spk_input)
-waveform = audio_detokenizer.token2wav(audio_tokens, save_path='out.wav', **spk_input)
-```
-
-For detailed usage for ASR, SpeechQA, and TTS tasks, please refer to `test_audio_tasks.py`
-
-### Image Generation & Edit
-
-Ming-omni natively supports image generation and image editing. To use this function, you only need to add the corresponding parameters in the generate function.
-
-```python
-# Image generation mode currently limits the range of input pixels.
-gen_input_pixels = 451584
-processor.max_pixels = gen_input_pixels
-processor.min_pixels = gen_input_pixels
-
-def generate(messages, processor, model, **image_gen_param):
-    text = processor.apply_chat_template(messages, add_generation_prompt=True)
-    image_inputs, video_inputs, audio_inputs = processor.process_vision_info(messages)
-
-    inputs = processor(
-        text=[text],
-        images=image_inputs,
-        videos=video_inputs,
-        audios=audio_inputs,
-        return_tensors="pt",
-    ).to(model.device)
-
-    for k in inputs.keys():
-        if k == "pixel_values" or k == "pixel_values_videos" or k == "audio_feats":
-            inputs[k] = inputs[k].to(dtype=torch.bfloat16)
-    
-    print(image_gen_param)
-    image = model.generate(
-        **inputs,
-        image_gen=True,
-        **image_gen_param,
-    )
-    return image
-
-```
-
-Text-to-image
-```python
-messages = [
-    {
-        "role": "HUMAN",
-        "content": [
-            {"type": "text", "text": "Draw a girl with short hair."},
-        ],
-    }
-]
-image = generate(
-   messages=messages, processor=processor, model=model, 
-   image_gen_cfg=6.0, image_gen_steps=20, image_gen_width=480, image_gen_height=544
-)
-image.save("./t2i.jpg")
-```
-
-Edit
-```python
-messages = [
-    {
-        "role": "HUMAN",
-        "content": [
-            {"type": "image", "image": "samples/cake.jpg"},
-            {"type": "text", "text": "add a candle on top of the cake"},
-        ],
-    }
-]
-image = generate(
-   messages=messages, processor=processor, model=model, 
-   image_gen_cfg=6.0, image_gen_steps=20, image_gen_width=512, image_gen_height=512
-)
-image.save("./edit.jpg")
+# 鹦鹉是一种非常聪明和社交性强的鸟类，它们的生活习性非常丰富和有趣。以下是一些关于鹦鹉生活习性的详细介绍：
+# ### 1. **栖息地**
+# 鹦鹉主要分布在热带和亚热带地区，包括非洲、亚洲、澳大利亚和南美洲。它们通常生活在森林、草原、沙漠和城市环境中。不同种类的鹦鹉对栖息地的要求有所不同，但大多数鹦鹉喜欢有丰富植被和水源的地方。
+# ### 2. **饮食**
+# 鹦鹉是杂食性动物，它们的饮食非常多样化。它们的食物包括种子、坚果、水果、蔬菜、花蜜和昆虫。鹦鹉的喙非常强壮，能够轻松地打开坚硬的果壳和坚果。一些鹦鹉还会吃泥土或沙子，以帮助消化和补充矿物质。
+# ......
 ```
 
 
 ## License and Legal Disclaimer
 
-This code repository is licensed under the [MIT License](../LICENSE), and the Legal Disclaimer is located in the [LEGAL.md file](../LEGAL.md) under the project's root directory.
+This code repository is licensed under the [MIT License](./LICENSE), and the Legal Disclaimer is located in the [LEGAL.md file](./LEGAL.md) under the project's root directory.
 
 ## Citation
 
