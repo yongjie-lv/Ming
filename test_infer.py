@@ -24,8 +24,7 @@ def generate(messages, processor, model):
     srt_time = time.time()
     generated_ids = model.generate(
         **inputs,
-        max_new_tokens=128,
-        use_cache=False,
+        max_new_tokens=512,
         eos_token_id=processor.gen_terminator,
     )
     generated_ids_trimmed = [
@@ -48,7 +47,7 @@ if __name__ == '__main__':
         attn_implementation="flash_attention_2",
     ).to("cuda")
 
-    vision_path = "/input/zhangqinglong.zql/assets/"
+    vision_path = "/mllm_native/sunyunxiao.syx/assets/"
 
     # qa
     messages = [
@@ -78,7 +77,7 @@ if __name__ == '__main__':
         {
             "role": "HUMAN",
             "content": [
-                {"type": "video", "video": os.path.join(vision_path, "yoga.mp4"),"max_frames":128, "sample": "uniform"},
+                {"type": "video", "video": os.path.join(vision_path, "yoga.mp4"), 'min_pixels': 100352, 'max_pixels': 602112, "sample": "uniform"},
                 {"type": "text", "text": "What is the woman doing?"},
             ],
         },
@@ -108,13 +107,13 @@ if __name__ == '__main__':
     ]
     generate(messages=messages, processor=processor, model=model)
 
-    messages = [
-        {
-            "role": "HUMAN",
-            "content": [
-                {"type": "text", "text": "Please recognize the language of this speech and transcribe it. Format: oral."},
-                {"type": "audio", "audio": '/input/dongli.xq/BAC009S0915W0292.wav'},
-            ],
-        },
-    ]
-    generate(messages=messages, processor=processor, model=model)
+    # messages = [
+    #     {
+    #         "role": "HUMAN",
+    #         "content": [
+    #             {"type": "text", "text": "Please recognize the language of this speech and transcribe it. Format: oral."},
+    #             {"type": "audio", "audio": '/input/dongli.xq/BAC009S0915W0292.wav'},
+    #         ],
+    #     },
+    # ]
+    # generate(messages=messages, processor=processor, model=model)

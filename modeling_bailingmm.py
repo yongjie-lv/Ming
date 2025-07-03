@@ -147,11 +147,145 @@ class BailingMMNativeForConditionalGeneration(PreTrainedModel):
             mlp_modules_whisper.append(Transpose(-1, -2))  # Revert to a conv-style permutation.
             self.linear_proj_whisper = nn.Sequential(*mlp_modules_whisper)
 
-        if self.config.talker_config:
-            self.config.talker_config._name_or_path = f'{self.config._name_or_path}/talker'
-            self.talker = BailingTalkerForConditionalGeneration(self.config.talker_config)
+        # if self.config.talker_config:
+        #     self.config.talker_config._name_or_path = f'{self.config._name_or_path}/talker'
+        #     self.talker = BailingTalkerForConditionalGeneration(self.config.talker_config)
         self.post_init()
         self.loaded_image_gen_modules = False
+
+    def get_rope_index(
+        self,
+        input_ids,
+        image_token_id,
+        video_token_id,
+        image_start_token_id,
+        video_start_token_id,
+        image_grid_thw, 
+        video_grid_thw, 
+        attention_mask,
+        spatial_merge_size=2,
+        tokens_per_second=2,
+        second_per_grid_ts=None,
+    ):
+        use_abs_time_pos = second_per_grid_ts is not None
+
+        mrope_position_deltas = []
+        if image_grid_thw is not None or video_grid_thw is not None:
+            total_input_ids = input_ids
+            if attention_mask is None:
+                attention_mask = torch.ones_like(total_input_ids)
+            position_ids = torch.ones(
+                3,
+                input_ids.shape[0],
+                input_ids.shape[1],
+                dtype=input_ids.dtype,
+                device=input_ids.device,
+            )
+            image_index, video_index = 0, 0
+            attention_mask = attention_mask.to(total_input_ids.device)
+            for i, input_ids in enumerate(total_input_ids):
+                input_ids = input_ids[attention_mask[i] == 1]
+                image_nums, video_nums = 0, 0
+                if image_grid_thw is not None:
+                    vision_start_indices = torch.argwhere(input_ids == image_start_token_id).squeeze(1)
+                    vision_tokens = input_ids[vision_start_indices + 1]
+                    image_nums = (vision_tokens == image_token_id).sum()
+                if video_grid_thw is not None:
+                    vision_start_indices = torch.argwhere(input_ids == video_start_token_id).squeeze(1)
+                    vision_tokens = input_ids[vision_start_indices + 1]
+                    video_nums = (vision_tokens == video_token_id).sum()
+
+                input_tokens = input_ids.tolist()
+                llm_pos_ids_list: list = []
+                st = 0
+                remain_images, remain_videos = image_nums, video_nums
+                for _ in range(image_nums + video_nums):
+                    if image_token_id in input_tokens and remain_images > 0:
+                        ed_image = input_tokens.index(image_token_id, st)
+                    else:
+                        ed_image = len(input_tokens) + 1
+                    if video_token_id in input_tokens and remain_videos > 0:
+                        ed_video = input_tokens.index(video_token_id, st)
+                    else:
+                        ed_video = len(input_tokens) + 1
+                    if ed_image < ed_video:
+                        t, h, w = (
+                            image_grid_thw[image_index][0],
+                            image_grid_thw[image_index][1],
+                            image_grid_thw[image_index][2],
+                        )
+                        second_per_grid_t = 0
+                        image_index += 1
+                        remain_images -= 1
+                        ed = ed_image
+
+                    else:
+                        t, h, w = (
+                            video_grid_thw[video_index][0],
+                            video_grid_thw[video_index][1],
+                            video_grid_thw[video_index][2],
+                        )
+                        if second_per_grid_ts is not None:
+                            second_per_grid_t = second_per_grid_ts[video_index]
+                        else:
+                            second_per_grid_t = 1.0
+                        video_index += 1
+                        remain_videos -= 1
+                        ed = ed_video
+                    llm_grid_t, llm_grid_h, llm_grid_w = (
+                        t.item(),
+                        h.item() // spatial_merge_size,
+                        w.item() // spatial_merge_size,
+                    )
+                    text_len = ed - st
+
+                    st_idx = llm_pos_ids_list[-1].max() + 1 if len(llm_pos_ids_list) > 0 else 0
+                    llm_pos_ids_list.append(torch.arange(text_len).view(1, -1).expand(3, -1) + st_idx)
+
+                    range_tensor = torch.arange(llm_grid_t).view(-1, 1)
+                    expanded_range = range_tensor.expand(-1, llm_grid_h * llm_grid_w)
+                    if use_abs_time_pos:
+                        time_tensor = expanded_range * second_per_grid_t * tokens_per_second
+                        time_tensor_long = time_tensor.long()
+                    else:
+                        time_tensor_long = expanded_range.long()
+                    t_index = time_tensor_long.flatten()
+
+                    h_index = torch.arange(llm_grid_h).view(1, -1, 1).expand(llm_grid_t, -1, llm_grid_w).flatten()
+                    w_index = torch.arange(llm_grid_w).view(1, 1, -1).expand(llm_grid_t, llm_grid_h, -1).flatten()
+                    llm_pos_ids_list.append(torch.stack([t_index, h_index, w_index]) + text_len + st_idx)
+                    st = ed + llm_grid_t * llm_grid_h * llm_grid_w
+
+                if st < len(input_tokens):
+                    st_idx = llm_pos_ids_list[-1].max() + 1 if len(llm_pos_ids_list) > 0 else 0
+                    text_len = len(input_tokens) - st
+                    llm_pos_ids_list.append(torch.arange(text_len).view(1, -1).expand(3, -1) + st_idx)
+
+                llm_positions = torch.cat(llm_pos_ids_list, dim=1).reshape(3, -1)
+                position_ids[..., i, attention_mask[i] == 1] = llm_positions.to(position_ids.device)
+                mrope_position_deltas.append(llm_positions.max() + 1 - len(total_input_ids[i]))
+            mrope_position_deltas = torch.tensor(mrope_position_deltas, device=input_ids.device).unsqueeze(1)
+        else:
+            if attention_mask is not None:
+                position_ids = attention_mask.long().cumsum(-1) - 1
+                position_ids.masked_fill_(attention_mask == 0, 1)
+                position_ids = position_ids.unsqueeze(0).expand(3, -1, -1).to(input_ids.device)
+                max_position_ids = position_ids.max(0, keepdim=False)[0].max(-1, keepdim=True)[0]
+                mrope_position_deltas = max_position_ids + 1 - attention_mask.shape[-1]
+            else:
+                position_ids = (
+                    torch.arange(input_ids.shape[1], device=input_ids.device)
+                    .view(1, 1, -1)
+                    .expand(3, input_ids.shape[0], -1)
+                )
+                mrope_position_deltas = torch.zeros(
+                    [input_ids.shape[0], 1],
+                    device=input_ids.device,
+                    dtype=input_ids.dtype,
+                )
+
+        return position_ids, mrope_position_deltas
+        
 
     def extract_image_feature(self, pixel_values, grid_thw):
         with torch.cuda.amp.autocast(dtype=torch.bfloat16):
@@ -478,6 +612,20 @@ class BailingMMNativeForConditionalGeneration(PreTrainedModel):
                         audio_embeds_lengths, audio_placeholder_loc_lens, None,  # noqa
                 )
 
+            if self.config.llm_config.rope_scaling is not None and self.config.llm_config.rope_scaling["type"] == "3D":
+                position_ids, rope_deltas = self.get_rope_index(
+                    input_ids,
+                    image_token_id=self.config.llm_config.image_patch_token,
+                    video_token_id=self.config.llm_config.image_patch_token,
+                    image_start_token_id=self.config.llm_config.image_start_token,
+                    video_start_token_id=self.config.llm_config.video_start_token,
+                    image_grid_thw=image_grid_thw, 
+                    video_grid_thw=video_grid_thw, 
+                    attention_mask=attention_mask, 
+                )
+            else:
+                rope_deltas = None
+
             outputs = self.model.generate(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
@@ -487,6 +635,7 @@ class BailingMMNativeForConditionalGeneration(PreTrainedModel):
                 use_cache=use_cache,
                 image_mask=image_mask,
                 audio_mask=audio_mask,
+                rope_deltas=rope_deltas,
                 **generate_kwargs,
             )
         return outputs
@@ -579,5 +728,5 @@ class BailingMMNativeForConditionalGeneration(PreTrainedModel):
             *model_args,
             **kwargs,
         )
-        model.load_image_gen_modules(pretrained_model_name_or_path)
+        # model.load_image_gen_modules(pretrained_model_name_or_path)
         return model
