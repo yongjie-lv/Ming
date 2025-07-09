@@ -746,7 +746,7 @@ class Transpose(nn.Module):
 
     def forward(self, x):
         return x.transpose(self.dim0, self.dim1)
-    
+
 def patch_continuous_features(
     input_embeddings: torch.Tensor,
     placeholder_loc_lens: torch.Tensor,
@@ -890,8 +890,6 @@ def encode_audio_segments(
     waveforms_lengths=None,
     use_waveform=False,
     audio_config=None,
-    whisper_config=None,
-    use_whisper_encoder=False
 ):
     """
     Apply audio encoder to input audio features in wrapped format.
@@ -908,26 +906,18 @@ def encode_audio_segments(
         assert wav_feats is not None and wav_feats_lengths is not None
         # Unwrap the features so the feature of each waveform is placed at an independent row.
         feat_segs_batch, feat_seg_lengths = unwrap_feats(wav_feats, wav_feats_lengths)
-        if use_whisper_encoder:
-            assert isinstance(encoder, AudioEncoder)
-            assert whisper_config is not None
-            # for whisper encoder
-            # feat_segs_batch: [B, T, n_mels]
-            # feat_seg_lengths: [B]
-            audio_feats_seg = encoder(feat_segs_batch)
-            audio_feats_seg_proj = proj_layer(audio_feats_seg.transpose(-1, -2)).transpose(-1, -2)
-            feat_seg_lengths = feat_seg_lengths.to(feat_segs_batch.device)
-            # whisper encoder conv
-            audio_feat_seg_lengths = (feat_seg_lengths - 3 + 2 * 1) // 2 + 1
-            # project layer conv
-            audio_feat_seg_lengths = (audio_feat_seg_lengths - whisper_config.ds_kernel_size + 2 *
-                                      (whisper_config.ds_kernel_size//2)) // whisper_config.ds_stride + 1
-        else:
-            audio_feats_seg, audio_feat_seg_lengths = encoder(feat_segs_batch, feat_seg_lengths)[:2]
-            audio_feats_seg_proj = proj_layer(audio_feats_seg.transpose(-1, -2)).transpose(-1, -2)
-            # project layer conv
-            audio_feat_seg_lengths = (audio_feat_seg_lengths - audio_config.ds_kernel_size + 2 * (
-                    audio_config.ds_kernel_size // 2)) // audio_config.ds_stride + 1
+        assert isinstance(encoder, AudioEncoder)
+        # for whisper encoder
+        # feat_segs_batch: [B, T, n_mels]
+        # feat_seg_lengths: [B]
+        audio_feats_seg = encoder(feat_segs_batch)
+        audio_feats_seg_proj = proj_layer(audio_feats_seg.transpose(-1, -2)).transpose(-1, -2)
+        feat_seg_lengths = feat_seg_lengths.to(feat_segs_batch.device)
+        # whisper encoder conv
+        audio_feat_seg_lengths = (feat_seg_lengths - 3 + 2 * 1) // 2 + 1
+        # project layer conv
+        audio_feat_seg_lengths = (audio_feat_seg_lengths - audio_config.ds_kernel_size + 2 *
+                                  (audio_config.ds_kernel_size//2)) // audio_config.ds_stride + 1
 
     # Wrap the features so the 1st dim represents batch_size.
     input_lengths = waveforms_lengths if use_waveform else wav_feats_lengths
