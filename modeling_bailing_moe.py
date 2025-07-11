@@ -296,7 +296,8 @@ class BailingMoeYarnRotaryEmbedding(BailingMoeRotaryEmbedding):
 
 class BailingMoe3DRotaryEmbedding(BailingMoeRotaryEmbedding):
     def forward(self, x, position_ids):
-        inv_freq_expand = self.inv_freq[None, None, :, None].expand(3, 1, -1, 1)
+        inv_freq = 1.0 / (self.base ** (torch.arange(0, self.dim, 2).float() / self.dim))
+        inv_freq_expand = inv_freq[None, None, :, None].expand(3, 1, -1, 1)
         position_ids_expand = position_ids[:, :, None, :].float()
 
         with torch.autocast(device_type=x.device.type, enabled=False):
