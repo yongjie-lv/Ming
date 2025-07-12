@@ -15,7 +15,7 @@ warnings.filterwarnings("ignore")
 
 def initialize_models(model_path: str, device: str = "cuda"):
     # processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
-    processor = AutoProcessor.from_pretrained(model_path)
+    processor = AutoProcessor.from_pretrained(".", trust_remote_code=True)
     model = (
         BailingMMNativeForConditionalGeneration.from_pretrained(
             model_path,
