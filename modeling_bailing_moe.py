@@ -120,7 +120,7 @@ class BailingMoeRMSNorm(nn.Module):
         hidden_states = hidden_states.to(torch.float32)
         variance = hidden_states.pow(2).mean(-1, keepdim=True)
         hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
-        return self.weight * hidden_states.to(input_dtype)
+        return (self.weight * hidden_states).to(input_dtype)
 
 
 ALL_LAYERNORM_LAYERS.append(BailingMoeRMSNorm)
@@ -296,7 +296,8 @@ class BailingMoeYarnRotaryEmbedding(BailingMoeRotaryEmbedding):
 
 class BailingMoe3DRotaryEmbedding(BailingMoeRotaryEmbedding):
     def forward(self, x, position_ids):
-        inv_freq_expand = self.inv_freq[None, None, :, None].expand(3, 1, -1, 1)
+        inv_freq = 1.0 / (self.base ** (torch.arange(0, self.dim, 2).float() / self.dim))
+        inv_freq_expand = inv_freq[None, None, :, None].expand(3, 1, -1, 1)
         position_ids_expand = position_ids[:, :, None, :].float()
 
         with torch.autocast(device_type=x.device.type, enabled=False):
@@ -395,7 +396,7 @@ class BailingMoeGate(nn.Module):
         scores = logits.softmax(dim=-1, dtype=torch.float32)
 
         # select top-k experts
-        topk_weight, topk_idx = torch.topk(scores, k=self.top_k, dim=-1, sorted=sort)
+        topk_weight, topk_idx = torch.topk(scores, k=self.top_k, dim=-1)
 
         # norm gate to sum 1
         if self.top_k > 1 and self.norm_topk_prob:
