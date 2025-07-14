@@ -188,27 +188,37 @@ You can download the model from both Huggingface and ModelScope.
 </div>
 If you're in mainland China, we strongly recommend you to download our model from 🤖 <a href="https://www.modelscope.cn/models/inclusionAI/Ming-Lite-Omni">ModelScope</a>.
 
+```
+pip install modelscope
+modelscope download --model inclusionAI/Ming-Lite-Omni --local_dir inclusionAI/Ming-Lite-Omni  --revision master
+```
+
+Note: This download process will take several minutes to several hours, depending on your network conditions.
+
+
+
+
 
 ## Use Cases
 
 Additional demonstration cases are available on our project [page](https://lucaria-academy.github.io/Ming-Omni/).
 
 
-## Installation
+## Environment Preparation
 
-Please download our model following [Model Downloads](#model-downloads), then you can refer to the following codes to run Ming-lite-omni model.
 
-Python environment dependency installation.
+### Installation with pip
 ```shell
 pip install -r requirements.txt
-pip install data/matcha_tts-0.0.5.1-cp38-cp38-linux_x86_64.whl
+# for python 3.10
+pip install data/matcha_tts-0.0.5.1-cp310-cp310-linux_x86_64.whl 
+# for python 3.8 
+# pip install data/matcha_tts-0.0.5.1-cp38-cp38-linux_x86_64.whl
 pip install diffusers==0.33.0
-pip install nvidia-cublas-cu12==12.4.5.8  # for H20
+pip install nvidia-cublas-cu12==12.4.5.8  # for H20 GPU
 ```
-Note: We test following examples on hardware of NVIDIA H800-80GB with CUDA 12.2. Loading inclusionAI/Ming-Lite-Omni in bfloat16 takes about 40890MB memory.
 
-
-## Installation with docker
+### Installation with docker
 
 You can also initialize the environment by building the docker image. First clone this repository:
 ```shell
@@ -228,15 +238,35 @@ You can run the model with python interface. You may download the huggingface mo
 
 ## Example Usage
 
-We provide a small example on the usage of this repo. For detailed usage, please refer to [this notebook](./examples/demo.ipynb).
+We provide a step-by-step running example:
+
+Step 1 - Download the source code
+```
+git clone https://github.com/inclusionAI/Ming.git 
+cd Ming
+```
+Step 2 - Download the model weights and create a soft link to the source code directory
+
+Download our model following [Model Downloads](#model-downloads)
+
+```shell
+mkdir inclusionAI 
+ln -s /path/to/inclusionAI/Ming-Lite-Omni inclusionAI/Ming-Lite-Omni
+```
+
+Step 3 - Enter the code directory, you can refer to the following codes to run the Ming-Lite-Omni model.
+```
+jupyter notebook cookbook.ipynb
+```
+
+We also provide a simple example on the usage of this repo. For detailed usage, please refer to [cookbook.ipynb](cookbook.ipynb).
 
 ```python
-import os
 import torch
 from transformers import AutoProcessor, GenerationConfig
 from modeling_bailingmm import BailingMMNativeForConditionalGeneration
 
-# build model
+# load model
 model = BailingMMNativeForConditionalGeneration.from_pretrained(
     "inclusionAI/Ming-Lite-Omni",
     torch_dtype=torch.bfloat16,
@@ -302,6 +332,10 @@ print(output_text)
 # 鹦鹉是杂食性动物，它们的饮食非常多样化。它们的食物包括种子、坚果、水果、蔬菜、花蜜和昆虫。鹦鹉的喙非常强壮，能够轻松地打开坚硬的果壳和坚果。一些鹦鹉还会吃泥土或沙子，以帮助消化和补充矿物质。
 # ......
 ```
+
+Note: We test the examples on hardware of NVIDIA H800-80GB/H20-96G with CUDA 12.4. Loading inclusionAI/Ming-Lite-Omni in bfloat16 takes about 62G GPU memory.
+
+
 
 
 ## License and Legal Disclaimer

@@ -16,5 +16,9 @@ inflect
 conformer
 diffusers
 lightning
+triton
+matplotlib
 gdown
+rich
+ipdb
 openai-whisper==20240930
