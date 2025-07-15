@@ -168,7 +168,7 @@ def generate_tts(
 
 
 if __name__ == "__main__":
-    MODEL_PATH = "/root/transformers/tests/models/bailingmm/bailingv4_moe_lite/"
+    MODEL_PATH = "inclusionAI/Ming-Lite-Omni"
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     GENERATION_CONFIG = {
         "output_hidden_states": True,

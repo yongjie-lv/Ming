@@ -39,15 +39,16 @@ def generate(messages, processor, model):
 
 
 if __name__ == '__main__':
-    processor = AutoProcessor.from_pretrained(".", trust_remote_code=True)
-    model_path = "."
+    model_path = "inclusionAI/Ming-Lite-Omni"
     model = BailingMMNativeForConditionalGeneration.from_pretrained(
         model_path,
         torch_dtype=torch.bfloat16,
         attn_implementation="flash_attention_2",
     ).to("cuda", dtype=torch.bfloat16)
 
-    vision_path = "/mllm_native/sunyunxiao.syx/assets/"
+    processor = AutoProcessor.from_pretrained(".", trust_remote_code=True)
+
+    vision_path = "figures/cases"
 
     # qa
     messages = [
@@ -65,7 +66,7 @@ if __name__ == '__main__':
         {
             "role": "HUMAN",
             "content": [
-                {"type": "image", "image": os.path.join(vision_path, "flowers.jpg")},
+                {"type": "image", "image": os.path.join(vision_path, "flower.jpg")},
                 {"type": "text", "text": "What kind of flower is this?"},
             ],
         },
@@ -107,13 +108,3 @@ if __name__ == '__main__':
     ]
     generate(messages=messages, processor=processor, model=model)
 
-    # messages = [
-    #     {
-    #         "role": "HUMAN",
-    #         "content": [
-    #             {"type": "text", "text": "Please recognize the language of this speech and transcribe it. Format: oral."},
-    #             {"type": "audio", "audio": '/input/dongli.xq/BAC009S0915W0292.wav'},
-    #         ],
-    #     },
-    # ]
-    # generate(messages=messages, processor=processor, model=model)

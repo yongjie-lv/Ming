@@ -318,8 +318,8 @@ def generate_gen_image(
 
 if __name__ == '__main__':
     
-    model_path = "."
-    processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+    model_path = "inclusionAI/Ming-Lite-Omni"
+    processor = AutoProcessor.from_pretrained('.', trust_remote_code=True)
     model = BailingMMNativeForConditionalGeneration.from_pretrained(
         model_path,
         torch_dtype=torch.bfloat16,
