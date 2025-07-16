@@ -2,7 +2,9 @@ import time
 import warnings
 from typing import Any, Dict, Optional
 
+import re
 import torch
+import torchaudio
 from hyperpyyaml import load_hyperpyyaml
 from transformers import AutoProcessor, GenerationConfig
 
@@ -10,11 +12,14 @@ from audio_detokenizer.cli.frontend import TTSFrontEnd
 from modeling_bailing_talker import AudioDetokenizer
 from modeling_bailingmm import BailingMMNativeForConditionalGeneration
 
+
 warnings.filterwarnings("ignore")
 
+def contains_chinese(text):
+    return bool(re.search(r'[\u4e00-\u9fff]', text))
 
-def initialize_models(model_path: str, device: str = "cuda"):
-    # processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+
+def initialize_models(model_path: str, spk_info: Dict[str, torch.Tensor], device: str = "cuda"):
     processor = AutoProcessor.from_pretrained(".", trust_remote_code=True)
     model = (
         BailingMMNativeForConditionalGeneration.from_pretrained(
@@ -26,15 +31,16 @@ def initialize_models(model_path: str, device: str = "cuda"):
         .to(device)
     )
 
-    with open(f"{model_path}/talker/audio_detokenizer.yaml", "r") as f:
+    with open(f"{model_path}/talker/audio_detokenizer_stream.yaml", "r") as f:
         configs = load_hyperpyyaml(f)
-
+    
     audio_detokenizer = AudioDetokenizer(
-        f"{model_path}/talker/audio_detokenizer.yaml",
-        flow_model_path=f"{model_path}/talker/flow.pt",
-        hifigan_model_path=f"{model_path}/talker/hift.pt",
+        f"{model_path}/talker/audio_detokenizer_stream.yaml",
+        flow_model_path=f"{model_path}/talker/flow_stream.pt",
+        hifigan_model_path=f"{model_path}/talker/hift_v2.pt",
+        spk_info=spk_info,
     )
-
+    # new mel
     audio_frontend = TTSFrontEnd(
         configs["feat_extractor"],
         f"{model_path}/talker/campplus.onnx",
@@ -90,6 +96,7 @@ def generate_e2e(
     use_whisper_encoder: bool = True,
     device: str = "cuda",
     generation_config: Optional[Dict[str, Any]] = None,
+    stream: bool = False,
 ):
 
     text = processor.apply_chat_template(
@@ -135,16 +142,25 @@ def generate_e2e(
         generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
     )[0]
 
+    is_chinese = contains_chinese(output_text)
+    output_text = output_text.replace("-", "")
+    # support english
+    if not is_chinese:
+        output_text = output_text.split()
+    
     waveform = None
     if model.talker is not None and output_audio_path:
         thinker_reply_part = outputs.hidden_states[0][0] + outputs.hidden_states[0][-1]
+        speaker = 'luna' if is_chinese else 'eng'
         spk_input = spk_info.get(speaker, "luna")
-        audio_tokens = model.talker.omni_audio_generation(
-            output_text, thinker_reply_part=thinker_reply_part, **spk_input
-        )
-        waveform = audio_detokenizer.token2wav(
-            audio_tokens, save_path=output_audio_path, **spk_input
-        )
+
+        all_wavs = []
+        for tts_speech, text_list in model.talker.omni_audio_generation(
+            output_text, audio_detokenizer=audio_detokenizer, thinker_reply_part=thinker_reply_part, speaker=speaker, stream=stream, **spk_input
+        ):
+            all_wavs.append(tts_speech)
+        waveform = torch.cat(all_wavs, dim=-1)
+        torchaudio.save(output_audio_path, waveform, audio_detokenizer.sr)
 
     print(f"Generate time: {(time.time() - srt_time):.2f}s")
     return output_text, waveform
@@ -158,17 +174,30 @@ def generate_tts(
     model: BailingMMNativeForConditionalGeneration,
     audio_detokenizer: AudioDetokenizer,
     output_audio_path: Optional[str] = None,
+    stream: bool = False,
 ):
     srt_time = time.time()
     spk_input = audio_frontend.frontend_zero_shot(prompt_text, prompt_wav_path)
-    audio_tokens = model.talker.omni_audio_generation(tts_text, **spk_input)
-    waveform = audio_detokenizer.token2wav(audio_tokens, save_path=output_audio_path, **spk_input)
+
+    is_chinese = contains_chinese(tts_text)
+    # support english
+    if not is_chinese:
+        tts_text = tts_text.split()
+
+    all_wavs = []
+    for tts_speech, text_list in model.talker.omni_audio_generation(
+        tts_text, audio_detokenizer=audio_detokenizer, stream=stream, **spk_input
+    ):
+        all_wavs.append(tts_speech)
+    waveform = torch.cat(all_wavs, dim=-1)
+    torchaudio.save(output_audio_path, waveform, audio_detokenizer.sr)
     print(f"Generate time: {(time.time() - srt_time):.2f}s")
+
     return waveform
 
 
 if __name__ == "__main__":
-    MODEL_PATH = "inclusionAI/Ming-Lite-Omni"
+    MODEL_PATH = "/root/transformers/tests/models/bailingmm/bailingv4_moe_lite/"
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     GENERATION_CONFIG = {
         "output_hidden_states": True,
@@ -176,10 +205,13 @@ if __name__ == "__main__":
         "no_repeat_ngram_size": 10,
     }
 
-    spk_info = {"luna": torch.load("data/spks/luna.pt")}
+    spk_info = {
+            'luna': torch.load('data/spks/luna_v2.pt'),
+            'eng': torch.load('data/spks/eng_v2.pt'),
+        }
 
     processor, model, audio_detokenizer, audio_frontend = initialize_models(
-        model_path=MODEL_PATH, device=DEVICE
+        model_path=MODEL_PATH, spk_info=spk_info, device=DEVICE
     )
 
     # ASR
@@ -218,6 +250,7 @@ if __name__ == "__main__":
         output_audio_path="out.wav",
         spk_info=spk_info,
         generation_config=GENERATION_CONFIG,
+        stream=False,
     )
     print(f"SPeech QA 文本响应：{text_response}")
     print("SPeech QA 音频响应已保存到 out.wav")
@@ -232,5 +265,6 @@ if __name__ == "__main__":
         model=model,
         audio_detokenizer=audio_detokenizer,
         output_audio_path="out_tts.wav",
+        stream=False,
     )
     print("TTS 音频响应已保存到 out_tts.wav")

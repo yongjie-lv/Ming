@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from functools import partial
 import onnxruntime
 import torch
 import numpy as np
@@ -19,9 +18,7 @@ import whisper
 from typing import Callable
 import torchaudio.compliance.kaldi as kaldi
 import torchaudio
-import ipdb
-import sys
-from hyperpyyaml import load_hyperpyyaml
+
 from audio_detokenizer.utils.file_utils import load_wav
 
 
@@ -41,7 +38,6 @@ class TTSFrontEnd:
         self.speech_tokenizer_session = onnxruntime.InferenceSession(speech_tokenizer_model, sess_options=option,
                                                                      providers=["CUDAExecutionProvider" if torch.cuda.is_available() else
                                                                                 "CPUExecutionProvider"])
-
 
 
     def _extract_speech_token(self, speech):
