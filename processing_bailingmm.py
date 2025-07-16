@@ -257,17 +257,17 @@ class BailingMMProcessor(ProcessorMixin):
                 if content["type"] == "image":
                     num_images = 1 if isinstance(content["image"], (str, Image.Image)) else len(content["image"])
                     if image_counts < num_images:
-                        image_placeholder = "<image>\n" * (num_images - image_counts)
+                        image_placeholder = "<IMAGE>\n" * (num_images - image_counts)
                         text += image_placeholder.rstrip("\n")
                 # only one video supported now
                 elif content["type"] == "video":
                     assert video_counts <= 1, "Video count must be at most 1!"
                     if video_counts == 0:
-                        text += "<video>"
+                        text += "<VIDEO>"
                 elif content["type"] == "audio":
                     num_audios = 1 if isinstance(content["audio"], str) else len(content["audio"])
                     if audio_counts < num_audios:
-                        audio_placeholder = "<audio>\n" * (num_audios - audio_counts)
+                        audio_placeholder = "<AUDIO>\n" * (num_audios - audio_counts)
                         text += audio_placeholder.rstrip("\n")
                 elif content["type"] == "text":
                     text += content['text']
@@ -293,7 +293,7 @@ class BailingMMProcessor(ProcessorMixin):
         self,
         text: List[TextInput],
         image_grid_thw: Union[List[int], int],
-        special_token: str = "<image>",
+        special_token: str = "<IMAGE>",
     ):
         prompt_strings = []
         image_index = 0
@@ -313,7 +313,7 @@ class BailingMMProcessor(ProcessorMixin):
         self,
         text: List[TextInput],
         video_grid_thw: Union[List[int], int],
-        special_token: str = "<video>",
+        special_token: str = "<VIDEO>",
     ):
         prompt_strings = []
         video_index = 0
@@ -334,7 +334,7 @@ class BailingMMProcessor(ProcessorMixin):
         self,
         text: List[TextInput],
         audio_feats_lengths: torch.Tensor,
-        special_token: str = "<audio>",
+        special_token: str = "<AUDIO>",
     ):
         prompt_strings = []
         for sample, audio_feats_length_tensor in zip(text, audio_feats_lengths):
