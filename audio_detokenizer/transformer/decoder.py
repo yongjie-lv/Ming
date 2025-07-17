@@ -20,12 +20,12 @@ import torch
 import torch.utils.checkpoint as ckpt
 import logging
 
-from .decoder_layer import DecoderLayer
-from .positionwise_feed_forward import PositionwiseFeedForward
+from ..transformer.decoder_layer import DecoderLayer
+from ..transformer.positionwise_feed_forward import PositionwiseFeedForward
 from ..utils.class_utils import (
-    BAILING_EMB_CLASSES,
-    BAILING_ATTENTION_CLASSES,
-    BAILING_ACTIVATION_CLASSES,
+    COSYVOICE_EMB_CLASSES,
+    COSYVOICE_ATTENTION_CLASSES,
+    COSYVOICE_ACTIVATION_CLASSES,
 )
 from ..utils.mask import (subsequent_mask, make_pad_mask)
 
@@ -77,12 +77,12 @@ class TransformerDecoder(torch.nn.Module):
     ):
         super().__init__()
         attention_dim = encoder_output_size
-        activation = BAILING_ACTIVATION_CLASSES[activation_type]()
+        activation = COSYVOICE_ACTIVATION_CLASSES[activation_type]()
 
         self.embed = torch.nn.Sequential(
             torch.nn.Identity() if input_layer == "no_pos" else
             torch.nn.Embedding(vocab_size, attention_dim),
-            BAILING_EMB_CLASSES[input_layer](attention_dim,
+            COSYVOICE_EMB_CLASSES[input_layer](attention_dim,
                                                positional_dropout_rate),
         )
 
@@ -97,10 +97,10 @@ class TransformerDecoder(torch.nn.Module):
         self.decoders = torch.nn.ModuleList([
             DecoderLayer(
                 attention_dim,
-                BAILING_ATTENTION_CLASSES["selfattn"](
+                COSYVOICE_ATTENTION_CLASSES["selfattn"](
                     attention_heads, attention_dim,
                     self_attention_dropout_rate, key_bias),
-                BAILING_ATTENTION_CLASSES["selfattn"](
+                COSYVOICE_ATTENTION_CLASSES["selfattn"](
                     attention_heads, attention_dim, src_attention_dropout_rate,
                     key_bias) if src_attention else None,
                 PositionwiseFeedForward(attention_dim, linear_units,
@@ -174,7 +174,7 @@ class TransformerDecoder(torch.nn.Module):
                                                      memory_mask)
         return x
 
-    @torch.jit.ignore(drop=True)
+    @torch.jit.unused
     def forward_layers_checkpointed(self, x: torch.Tensor,
                                     tgt_mask: torch.Tensor,
                                     memory: torch.Tensor,

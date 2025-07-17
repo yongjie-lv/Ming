@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# antflake8: noqa
 import torch
 
 from ..transformer.activation import Swish
@@ -35,7 +34,7 @@ from ..transformer.embedding import EspnetRelPositionalEncoding
 from ..transformer.subsampling import LegacyLinearNoSubsampling
 
 
-BAILING_ACTIVATION_CLASSES = {
+COSYVOICE_ACTIVATION_CLASSES = {
     "hardtanh": torch.nn.Hardtanh,
     "tanh": torch.nn.Tanh,
     "relu": torch.nn.ReLU,
@@ -44,7 +43,7 @@ BAILING_ACTIVATION_CLASSES = {
     "gelu": torch.nn.GELU,
 }
 
-BAILING_SUBSAMPLE_CLASSES = {
+COSYVOICE_SUBSAMPLE_CLASSES = {
     "linear": LinearNoSubsampling,
     "linear_legacy": LegacyLinearNoSubsampling,
     "embed": EmbedinigNoSubsampling,
@@ -55,7 +54,7 @@ BAILING_SUBSAMPLE_CLASSES = {
     'paraformer_dummy': torch.nn.Identity
 }
 
-BAILING_EMB_CLASSES = {
+COSYVOICE_EMB_CLASSES = {
     "embed": PositionalEncoding,
     "abs_pos": PositionalEncoding,
     "rel_pos": RelPositionalEncoding,
@@ -65,7 +64,7 @@ BAILING_EMB_CLASSES = {
     "embed_learnable_pe": LearnablePositionalEncoding,
 }
 
-BAILING_ATTENTION_CLASSES = {
+COSYVOICE_ATTENTION_CLASSES = {
     "selfattn": MultiHeadedAttention,
     "rel_selfattn": RelPositionMultiHeadedAttention,
 }
