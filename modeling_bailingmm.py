@@ -36,6 +36,8 @@ from modeling_whisper_encoder import WhisperAudioEncoder
 # vision encoder
 from qwen2_5_vit import Qwen2_5_VisionTransformer
 
+from bailingmm_utils import process_ratio
+
 logger = logging.get_logger(__name__)
 
 _CONFIG_FOR_DOC = "BailingMMConfig"
@@ -580,7 +582,7 @@ class BailingMMNativeForConditionalGeneration(PreTrainedModel):
             video_embeds = self.extract_image_feature(pixel_values_videos, grid_thw=video_grid_thw)
 
         if image_gen:
-            assert self.loaded_image_gen_modules is True
+            assert self.loaded_image_gen_modules is True, "please add `load_image_gen=True` in from_pretrained() method"
             assert video_embeds is None
             assert audio_embeds is None
             assert position_ids is None
@@ -603,6 +605,15 @@ class BailingMMNativeForConditionalGeneration(PreTrainedModel):
             # ) if image_gen_negative_input_ids is not None else None
 
             negative_condition_embeds = condition_embeds * 0.0
+
+            if isinstance(image_gen_height, torch.Tensor):
+                image_gen_height = int(image_gen_height.cpu().item())
+            
+            if isinstance(image_gen_width, torch.Tensor):
+                image_gen_width = int(image_gen_width.cpu().item())
+
+            closest_size, _ = process_ratio(ori_h=image_gen_height, ori_w=image_gen_width)
+            image_gen_height, image_gen_width = closest_size
 
             sample_kwargs = {
                 "encoder_hidden_states": condition_embeds,
