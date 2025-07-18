@@ -120,7 +120,7 @@ class BailingMoeRMSNorm(nn.Module):
         hidden_states = hidden_states.to(torch.float32)
         variance = hidden_states.pow(2).mean(-1, keepdim=True)
         hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
-        return self.weight * hidden_states.to(input_dtype)
+        return (self.weight * hidden_states).to(input_dtype)
 
 
 ALL_LAYERNORM_LAYERS.append(BailingMoeRMSNorm)
@@ -294,6 +294,21 @@ class BailingMoeYarnRotaryEmbedding(BailingMoeRotaryEmbedding):
         self.register_buffer("sin_cached", (emb.sin() * _mscale).to(dtype), persistent=False)
 
 
+class BailingMoe3DRotaryEmbedding(BailingMoeRotaryEmbedding):
+    def forward(self, x, position_ids):
+        inv_freq = 1.0 / (self.base ** (torch.arange(0, self.dim, 2).float() / self.dim))
+        inv_freq_expand = inv_freq[None, None, :, None].expand(3, 1, -1, 1)
+        position_ids_expand = position_ids[:, :, None, :].float()
+
+        with torch.autocast(device_type=x.device.type, enabled=False):
+            freqs = (inv_freq_expand.to(x.device).float() @ position_ids_expand.to(x.device).float()).transpose(2, 3)
+            assert freqs.dtype == torch.float32
+            emb = torch.cat((freqs, freqs), dim=-1)
+            cos_cached = emb.cos()
+            sin_cached = emb.sin()
+        return (cos_cached, sin_cached)
+
+
 # Copied from transformers.models.llama.modeling_llama.rotate_half
 def rotate_half(x):
     """Rotates half the hidden dims of the input."""
@@ -326,6 +341,14 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=1):
     """
     cos = cos[position_ids].unsqueeze(unsqueeze_dim)
     sin = sin[position_ids].unsqueeze(unsqueeze_dim)
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
+    return q_embed, k_embed
+
+def apply_multimodal_rotary_pos_emb(q, k, cos, sin, mrope_section=[16, 24, 24], unsqueeze_dim=1):
+    mrope_section = mrope_section * 2
+    cos = torch.cat([m[i % 3] for i, m in enumerate(cos.split(mrope_section, dim=-1))], dim=-1).unsqueeze(unsqueeze_dim)
+    sin = torch.cat([m[i % 3] for i, m in enumerate(sin.split(mrope_section, dim=-1))], dim=-1).unsqueeze(unsqueeze_dim)
     q_embed = (q * cos) + (rotate_half(q) * sin)
     k_embed = (k * cos) + (rotate_half(k) * sin)
     return q_embed, k_embed
@@ -373,7 +396,7 @@ class BailingMoeGate(nn.Module):
         scores = logits.softmax(dim=-1, dtype=torch.float32)
 
         # select top-k experts
-        topk_weight, topk_idx = torch.topk(scores, k=self.top_k, dim=-1, sorted=sort)
+        topk_weight, topk_idx = torch.topk(scores, k=self.top_k, dim=-1)
 
         # norm gate to sum 1
         if self.top_k > 1 and self.norm_topk_prob:
@@ -591,6 +614,12 @@ class BailingMoeAttention(nn.Module):
                     base=self.rope_theta,
                     **kwargs,
                 )
+            elif scaling_type == "3D":
+                self.rotary_emb = BailingMoe3DRotaryEmbedding(
+                    self.head_dim,
+                    max_position_embeddings=self.max_position_embeddings,
+                    base=self.rope_theta,
+                )
             else:
                 raise ValueError(f"Unknown RoPE scaling type {scaling_type}")
 
@@ -633,8 +662,13 @@ class BailingMoeAttention(nn.Module):
                     "with a layer index."
                 )
             kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
-        cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
-        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
+        
+        if self.config.rope_scaling is not None and self.config.rope_scaling["type"] == "3D":
+            cos, sin = self.rotary_emb(value_states, position_ids=position_ids)
+            query_states, key_states = apply_multimodal_rotary_pos_emb(query_states, key_states, cos, sin)
+        else:
+            cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
+            query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
 
         if past_key_value is not None:
             cache_kwargs = {"sin": sin, "cos": cos}  # Specific to RoPE models
@@ -737,8 +771,13 @@ class BailingMoeFlashAttention2(BailingMoeAttention):
         kv_seq_len = key_states.shape[-2]
         if past_key_value is not None:
             kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
-        cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
-        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
+            
+        if self.config.rope_scaling is not None and self.config.rope_scaling["type"] == "3D":
+            cos, sin = self.rotary_emb(value_states, position_ids=position_ids)
+            query_states, key_states = apply_multimodal_rotary_pos_emb(query_states, key_states, cos, sin)
+        else:
+            cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
+            query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
 
         if past_key_value is not None:
             cache_kwargs = {"sin": sin, "cos": cos}  # Specific to RoPE models
@@ -941,9 +980,13 @@ class BailingMoeSdpaAttention(BailingMoeAttention):
         kv_seq_len = key_states.shape[-2]
         if past_key_value is not None:
             kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
-        cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
 
-        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
+        if self.config.rope_scaling is not None and self.config.rope_scaling["type"] == "3D":
+            cos, sin = self.rotary_emb(value_states, position_ids=position_ids)
+            query_states, key_states = apply_multimodal_rotary_pos_emb(query_states, key_states, cos, sin)
+        else:
+            cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
+            query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
 
         if past_key_value is not None:
             cache_kwargs = {"sin": sin, "cos": cos}  # Specific to RoPE models
@@ -1542,11 +1585,12 @@ class BailingMoeForCausalLM(BailingMoePreTrainedModel):
         input_ids, 
         past_key_values=None, 
         attention_mask=None, 
+        position_ids=None,
         inputs_embeds=None, 
         cache_position=None,
-        token_type_ids=None,
         image_mask=None,
         audio_mask=None,
+        rope_deltas=None,
         **kwargs
     ):
         if past_key_values is not None:
@@ -1585,7 +1629,6 @@ class BailingMoeForCausalLM(BailingMoePreTrainedModel):
             ):
                 attention_mask = attention_mask[:, -max_cache_length:]
 
-        position_ids = kwargs.get("position_ids", None)
         if attention_mask is not None and position_ids is None:
             # create position_ids on the fly for batch generation
             position_ids = attention_mask.long().cumsum(-1) - 1
@@ -1596,10 +1639,24 @@ class BailingMoeForCausalLM(BailingMoePreTrainedModel):
         # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
         if inputs_embeds is not None and len(cache_position) == inputs_embeds.shape[1]:
             model_inputs = {"inputs_embeds": inputs_embeds}
+            if rope_deltas is not None:
+                self.rope_deltas = rope_deltas
         else:
             model_inputs = {"input_ids": input_ids}
             image_mask = None
             audio_mask = None
+            if rope_deltas is not None:
+                batch_size, seq_length = input_ids.shape
+                if past_key_values and self.rope_deltas:
+                    delta = past_key_values[0][1].shape[2] + self.rope_deltas
+                elif past_key_values:
+                    delta = torch.tensor(past_key_values[0][1].shape[2]).to(input_ids.device)
+                else:
+                    delta = torch.tensor(0).to(input_ids.device)
+                position_ids = torch.arange(seq_length, device=input_ids.device)
+                position_ids = position_ids.view(1, -1).expand(batch_size, -1)
+                position_ids = position_ids.add(delta)
+                position_ids = position_ids.unsqueeze(0).expand(3, -1, -1)
 
         model_inputs.update(
             {

@@ -23,11 +23,11 @@
       "sanm_shfit": 0,
       "selfattention_layer_type": "sanm"
     },
-    "audio_encoder_output_size": 512,
+    "audio_encoder_output_size": 1280,
     "audio_id_shift": null,
     "audio_wav_frontend_config_sanm": {},
     "ds_conv_type": "conv",
-    "ds_kernel_size": 1,
+    "ds_kernel_size": 3,
     "ds_stride": 1,
     "model_type": "bailingmm",
     "norm_query_embeds": true,
@@ -74,6 +74,8 @@
       "1": "LABEL_1"
     },
     "image_patch_token": 126346,
+    "image_start_token": 126347,
+    "video_start_token": 126349,
     "initializer_range": 0.006,
     "intermediate_size": 5632,
     "is_decoder": false,
@@ -117,8 +119,11 @@
     "repetition_penalty": 1.0,
     "return_dict": true,
     "return_dict_in_generate": false,
-    "rms_norm_eps": 1e-06,
-    "rope_scaling": null,
+    "rms_norm_eps": 1e-05,
+    "rope_scaling": {
+      "type": "3D",
+      "factor": null
+    },
     "rope_theta": 600000,
     "sep_token_id": null,
     "sliding_window": 4096,

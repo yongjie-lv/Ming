@@ -4,7 +4,7 @@ torchaudio==2.1.2
 funasr==1.1.14
 flash-attn==2.3.6
 peft==0.13.2
-diffusers #==0.33
+diffusers==0.33.1
 tokenizers==0.20.3
 transformers==4.45.0
 grouped_gemm==0.1.4
@@ -14,7 +14,6 @@ modelscope
 onnxruntime
 inflect
 conformer
-diffusers
 lightning
 triton
 matplotlib

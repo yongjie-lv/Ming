@@ -31,7 +31,8 @@ from transformers.image_utils import ImageInput, VideoInput
 from transformers.processing_utils import ProcessingKwargs, ProcessorMixin
 from transformers.tokenization_utils_base import PreTokenizedInput, TextInput
 
-from bailingmm_utils import process_vision_info
+from bailingmm_utils import process_vision_info, process_ratio
+import torchvision
 
 DEFAULT_IMAGE_PATCH_TOKEN = "<imagePatch>"
 DEFAULT_IM_START_TOKEN = "<image>"
@@ -187,11 +188,24 @@ class BailingMMProcessor(ProcessorMixin):
         image_inputs = {}
         video_inputs = {}
         audio_inputs = {}
+        image_gen_inputs = {}
 
         if images is not None:
             image_inputs = self.image_processor(images=images, videos=None, **output_kwargs["images_kwargs"])
             image_grid_thw = image_inputs["image_grid_thw"]
             text = self._expand_image_tokens(text, image_grid_thw)
+
+            ref_pil = images[0] if isinstance(images, list) else images
+            ref_pil = ref_pil.convert("RGB")
+            closest_size, resize_size = process_ratio(ori_h=ref_pil.size[1], ori_w=ref_pil.size[0])
+            ref_pil = torchvision.transforms.functional.resize(ref_pil, resize_size, interpolation=torchvision.transforms.InterpolationMode.BILINEAR)
+            ref_pil = torchvision.transforms.functional.center_crop(ref_pil, closest_size)
+            ref_tensor = ((torchvision.transforms.functional.to_tensor(ref_pil) - 0.5) * 2.0).unsqueeze(0)
+            image_gen_inputs = {
+                "pixel_values_reference": ref_tensor,
+                "image_gen_height": torch.LongTensor([ref_pil.size[1]]),
+                "image_gen_width": torch.LongTensor([ref_pil.size[0]]),
+            }
 
         if videos is not None:
             video_inputs = self.image_processor(images=None, videos=videos, **output_kwargs["videos_kwargs"])
@@ -217,7 +231,7 @@ class BailingMMProcessor(ProcessorMixin):
             audio_inputs["audio_placeholder_loc_lens"] = torch.tensor(loc_lens, dtype=torch.long)
             audio_inputs.pop('encoder_feats_lengths')
 
-        return BatchFeature(data={**text_inputs, **image_inputs, **video_inputs, **audio_inputs})
+        return BatchFeature(data={**text_inputs, **image_inputs, **video_inputs, **audio_inputs, **image_gen_inputs})
 
     def apply_system_template(self, text):
         return USER_PREFIX
@@ -257,17 +271,17 @@ class BailingMMProcessor(ProcessorMixin):
                 if content["type"] == "image":
                     num_images = 1 if isinstance(content["image"], (str, Image.Image)) else len(content["image"])
                     if image_counts < num_images:
-                        image_placeholder = "<image>\n" * (num_images - image_counts)
+                        image_placeholder = "<IMAGE>\n" * (num_images - image_counts)
                         text += image_placeholder.rstrip("\n")
                 # only one video supported now
                 elif content["type"] == "video":
                     assert video_counts <= 1, "Video count must be at most 1!"
                     if video_counts == 0:
-                        text += "<video>"
+                        text += "<VIDEO>"
                 elif content["type"] == "audio":
                     num_audios = 1 if isinstance(content["audio"], str) else len(content["audio"])
                     if audio_counts < num_audios:
-                        audio_placeholder = "<audio>\n" * (num_audios - audio_counts)
+                        audio_placeholder = "<AUDIO>\n" * (num_audios - audio_counts)
                         text += audio_placeholder.rstrip("\n")
                 elif content["type"] == "text":
                     text += content['text']
@@ -293,7 +307,7 @@ class BailingMMProcessor(ProcessorMixin):
         self,
         text: List[TextInput],
         image_grid_thw: Union[List[int], int],
-        special_token: str = "<image>",
+        special_token: str = "<IMAGE>",
     ):
         prompt_strings = []
         image_index = 0
@@ -313,7 +327,7 @@ class BailingMMProcessor(ProcessorMixin):
         self,
         text: List[TextInput],
         video_grid_thw: Union[List[int], int],
-        special_token: str = "<video>",
+        special_token: str = "<VIDEO>",
     ):
         prompt_strings = []
         video_index = 0
@@ -334,7 +348,7 @@ class BailingMMProcessor(ProcessorMixin):
         self,
         text: List[TextInput],
         audio_feats_lengths: torch.Tensor,
-        special_token: str = "<audio>",
+        special_token: str = "<AUDIO>",
     ):
         prompt_strings = []
         for sample, audio_feats_length_tensor in zip(text, audio_feats_lengths):

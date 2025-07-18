@@ -73,14 +73,15 @@ class SanaModel_withMLP(nn.Module):
                      **kargs):
 
         encoder_hidden_states = self.mlp(encoder_hidden_states)
-        hidden_states = self.sana(
-                    hidden_states=hidden_states,
-                    encoder_hidden_states=encoder_hidden_states,
-                    encoder_attention_mask=encoder_attention_mask,
-                    timestep=timestep,
-                    return_dict=False,
-                     **kargs
-                )
+        with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+            hidden_states = self.sana(
+                        hidden_states=hidden_states,
+                        encoder_hidden_states=encoder_hidden_states,
+                        encoder_attention_mask=encoder_attention_mask,
+                        timestep=timestep,
+                        return_dict=False,
+                        **kargs
+                    )
         return hidden_states
 
     def enable_gradient_checkpointing(self):
@@ -134,7 +135,9 @@ class SANALoss(torch.nn.Module):
         # checkpoint_path_withmlp=None, 
         # mlp_checkpoint_path=None, 
         mlp_state_dict=None,
-        trainable_params='all', device='cpu', guidance_scale=3.5, revision=None, variant=None, repa_loss=False, mid_layer_idx=10, mid_loss_weight=1.0
+        trainable_params='none_param', 
+        device='cpu', guidance_scale=3.5, revision=None, variant=None, repa_loss=False, mid_layer_idx=10, mid_loss_weight=1.0,
+        torch_dtype=torch.float32,
     ):
         super(SANALoss, self).__init__()
         self.torch_type = torch.bfloat16
@@ -149,18 +152,20 @@ class SANALoss(torch.nn.Module):
 
         self.device = torch.device(torch.cuda.current_device())    
         self.scheduler_path = scheduler_path
+
         self.vae = AutoencoderDC.from_pretrained(
             model_path,
             subfolder="vae",
             revision=revision,
             variant=variant,
+            torch_dtype=torch_dtype,
         )
         
         # self.vae.to(self.torch_type).to(self.device)
         self.vae.requires_grad_(False)
 
         self.train_model = SanaTransformer2DModel.from_pretrained(
-            model_path, subfolder="transformer", revision=revision, variant=variant
+            model_path, subfolder="transformer", revision=revision, variant=variant, torch_dtype=torch_dtype
         )
 
         if checkpoint_path is not None:
@@ -219,15 +224,6 @@ class SANALoss(torch.nn.Module):
                                                     )
         self.noise_scheduler_copy = copy.deepcopy(self.noise_scheduler)
 
-
-        # if self.train_model.config.guidance_embeds:
-        #     self.guidance = torch.tensor([guidance_scale], device=self.device)
-        #     # guidance = guidance.expand(model_input.shape[0])
-        # else:
-        #     self.guidance = None
-
-        logger.info("Preparation done. Starting training diffusion ...")
-
     def get_sigmas(self, timesteps, n_dim=4, dtype=torch.float32):
         # sigmas = noise_scheduler_copy.sigmas.to(device=self.device, dtype=dtype)
         sigmas = self.noise_scheduler_copy.sigmas
@@ -274,8 +270,9 @@ class SANALoss(torch.nn.Module):
             name_parameters_trainable.append(n)
             num_parameters_trainable += p.data.nelement()
 
-    def sample(self, encoder_hidden_states, steps=20, cfg=7.0, seed=42, height=512, width=512):
-        #self.pipelines = SanaPipeline.from_pretrained(self.base_model_path)#.to(device=self.device)
+    def sample(self, encoder_hidden_states, steps=20, cfg=7.0, seed=42, height=512, width=512, 
+        negative_encoder_hidden_states=None, image_cfg=1.0, cfg_mode=1, extra_vit_input=None, ref_x=None):
+        
         self.pipelines = SanaPipeline(vae=self.vae,
                          transformer=self.train_model,
                          text_encoder=None,
@@ -289,7 +286,7 @@ class SANALoss(torch.nn.Module):
         image = self.pipelines(
             prompt_embeds=encoder_hidden_states,
             prompt_attention_mask=prompt_attention_mask,
-            negative_prompt_embeds=encoder_hidden_states*0,
+            negative_prompt_embeds=negative_encoder_hidden_states if negative_encoder_hidden_states is not None else encoder_hidden_states * 0,
             negative_prompt_attention_mask=negative_attention_mask,
             guidance_scale=cfg,
             generator=torch.manual_seed(seed),
