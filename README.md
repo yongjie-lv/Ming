@@ -1,4 +1,4 @@
-# Ming-Lite-Omni
+# Ming-Lite-Omni v1.5
 
 <p align="center">
     <img src="./figures/ant-bailing.png" width="100"/>
