@@ -179,6 +179,10 @@ if __name__ == '__main__':
         attn_implementation="flash_attention_2",
         load_image_gen=True,
     ).to("cuda")
+
+    gen_input_pixels = 451584
+    processor.image_processor.max_pixels = gen_input_pixels
+    processor.image_processor.min_pixels = gen_input_pixels
     
     image = generate_gen_image(
         model=model, 
