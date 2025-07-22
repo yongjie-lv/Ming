@@ -45,7 +45,7 @@ class SD3Model_withMLP(nn.Module):
                     extra_vit_input=None,
                      **kargs):
 
-        encoder_hidden_states = self.mlp(encoder_hidden_states.float()).to(self.dtype)
+        encoder_hidden_states = self.mlp(encoder_hidden_states.to(self.mlp.fc1.weight.dtype)).to(self.dtype)
          
         pooled_projections = torch.nn.functional.adaptive_avg_pool1d(encoder_hidden_states.permute(0, 2, 1), output_size=1)
         pooled_projections = torch.nn.functional.adaptive_avg_pool1d(pooled_projections.squeeze(2), output_size=2048)
