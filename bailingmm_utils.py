@@ -40,6 +40,18 @@ FPS = 2.0
 FPS_MIN_FRAMES = 4
 FPS_MAX_FRAMES = 128
 
+import PIL
+VideoInput = Union[
+    List["PIL.Image.Image"],
+    "np.ndarray",
+    "torch.Tensor",
+    List["np.ndarray"],
+    List["torch.Tensor"],
+    List[List["PIL.Image.Image"]],
+    List[List["np.ndarrray"]],
+    List[List["torch.Tensor"]],
+]
+
 def is_decord_available() -> bool:
     import importlib.util
     return importlib.util.find_spec("decord") is not None

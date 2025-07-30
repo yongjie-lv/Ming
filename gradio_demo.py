@@ -2,14 +2,12 @@ import os
 import torch
 import uuid
 import re
-import torchaudio
-import gradio as gr
 
+import gradio as gr
 from gradio_client import utils as client_utils
-from hyperpyyaml import load_hyperpyyaml
+
 from transformers import AutoProcessor, GenerationConfig
 from modeling_bailingmm import BailingMMNativeForConditionalGeneration
-from audio_detokenizer.cli.frontend import TTSFrontEnd
 from modeling_bailing_talker import AudioDetokenizer
 
 
@@ -25,25 +23,6 @@ model = BailingMMNativeForConditionalGeneration.from_pretrained(
 
 # build processor
 processor = AutoProcessor.from_pretrained(".", trust_remote_code=True)
-
-with open(f"{model_path}/talker/audio_detokenizer_stream.yaml", "r") as f:
-    configs = load_hyperpyyaml(f)
-
-spk_info = {
-    'luna': torch.load('data/spks/luna_v2.pt'),
-    'eng': torch.load('data/spks/eng_v2.pt'),
-}
-audio_detokenizer = AudioDetokenizer(
-    f"{model_path}/talker/audio_detokenizer_stream.yaml",
-    flow_model_path=f"{model_path}/talker/flow_stream.pt",
-    hifigan_model_path=f"{model_path}/talker/hift_v2.pt",
-    spk_info=spk_info,
-)
-audio_frontend = TTSFrontEnd(
-    configs["feat_extractor"],
-    f"{model_path}/talker/campplus.onnx",
-    f"{model_path}/talker/speech_tokenizer_v1.onnx",
-)
 
 
 ################################## demo utils ###################################
@@ -94,17 +73,8 @@ def generate_text(model, processor, messages, has_audio=False):
     generation_config = GenerationConfig.from_dict({
         "no_repeat_ngram_size": 10
     })
-
-    if has_audio:
-        generated_ids = model.generate(
-            **inputs,
-            max_new_tokens=512,
-            use_cache=True,
-            eos_token_id=processor.gen_terminator,
-            generation_config=generation_config,
-            use_whisper_encoder=True
-        )
-    else:
+    outputs = None
+    if not has_audio:
         generated_ids = model.generate(
             **inputs,
             max_new_tokens=512,
@@ -112,6 +82,15 @@ def generate_text(model, processor, messages, has_audio=False):
             eos_token_id=processor.gen_terminator,
             generation_config=generation_config
         )
+    else:
+        generated_ids = model.generate(
+            **inputs,
+            max_new_tokens=512,
+            use_cache=True,
+            eos_token_id=processor.gen_terminator,
+            generation_config=generation_config,
+            use_whisper_encoder=True
+        )        
 
     # generated_ids = outputs.sequences
     generated_ids_trimmed = [
@@ -121,7 +100,7 @@ def generate_text(model, processor, messages, has_audio=False):
         generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
     )[0]
     
-    return output_text
+    return output_text, outputs
 
 
 def generate_image(model, processor, messages, has_audio=False):
@@ -135,10 +114,9 @@ def generate_image(model, processor, messages, has_audio=False):
     image_gen_param = {
         "image_gen_cfg": 6.0,
         "image_gen_steps": 20,
-        # "image_gen_width": 512,
-        # "image_gen_height": 512
+        "image_gen_width": 512,
+        "image_gen_height": 512
     }
-
     image = model.generate(
         **inputs,
         image_gen=True,
@@ -155,27 +133,29 @@ def contains_chinese(text):
     return bool(re.search(r'[\u4e00-\u9fff]', text))
 
 
-def text_to_speach(model, output_text, stream=False):
-    # if contains_chinese(output_text):
-    #     spk_input = torch.load('data/spks/luna.pt')
-    # else:
-    #     spk_input = torch.load('data/spks/luna_eng.pt')
-    is_chinese = contains_chinese(output_text)
-    if not is_chinese:
-        output_text = output_text.split()   
+def text_to_speach(model, output_text, outputs):
+    model_name_or_path = model.config._name_or_path
+    audio_detokenizer = AudioDetokenizer(
+        f'{model_name_or_path}/talker/audio_detokenizer.yaml',
+        flow_model_path=f'{model_name_or_path}/talker/flow.pt',
+        hifigan_model_path=f'{model_name_or_path}/talker/hift.pt'
+    )
 
-    speaker = 'luna' if is_chinese else 'eng'
-    spk_input = spk_info.get(speaker, "luna")
+    if contains_chinese(output_text):
+        spk_input = torch.load('data/spks/luna.pt')
+    else:
+        spk_input = torch.load('data/spks/luna_eng.pt')
 
-    all_wavs = []
-    for tts_speech, _ in model.talker.omni_audio_generation(
-        output_text, audio_detokenizer=audio_detokenizer, thinker_reply_part=None, speaker=speaker, stream=stream, **spk_input
-    ):
-        all_wavs.append(tts_speech)
-    waveform = torch.cat(all_wavs, dim=-1)
-
+    if outputs is not None:
+        thinker_reply_part = outputs.hidden_states[0][0] + outputs.hidden_states[0][-1]
+    else:
+        thinker_reply_part = None
+    # Setting thinker_reply_part to None allows the talker to operate as a standalone TTS model, independent of the language model.
+    audio_tokens = model.talker.omni_audio_generation(
+        output_text, 
+        thinker_reply_part=thinker_reply_part, **spk_input)
     audio_path = os.path.join(cache_dir, f"{uuid.uuid4()}.wav")
-    torchaudio.save(audio_path, waveform, audio_detokenizer.sr)
+    waveform = audio_detokenizer.token2wav(audio_tokens, save_path=audio_path, **spk_input)
 
     return audio_path
 
@@ -187,6 +167,56 @@ def find_audio(messages):
                 return True
 
     return False
+
+
+def infer_user_intent(model, processor, user_input):  
+    # question = "Based on the user instruction between <start_of_instruct> and <end_of_instruct> or provided in the audio, infer the actions to perform. If the task only needs to generate a text response, return a list of [\"text generation\"]. If the tasks only needs to generate an image, return a list of [\"image generation\"]. If the task needs to generate both a text response and an image, return a list of [\"text generation\", \"image generateion\"]. If no action needs to be performed, retuan []."
+    question = "Based on the user instruction given between <instruct> and </instruct> or provided in the audio, infer the actions to perform. If the task only needs to generate a text response, return a list of [\"text generation\"]. If the tasks only needs to generate an image, return a list of [\"image generation\"]. If the task needs to generate both a text response and an image, return a list of [\"text generation\", \"image generateion\"]. If no action needs to be performed, retuan []."
+    question = "According to the text above or the provided audio, infer the actions to perform. If the task only needs to generate a text response, return a list of [\"text generation\"]. If the tasks only needs to generate an image, return a list of [\"image generation\"]. If the task needs to generate both a text response and an image, return a list of [\"text generation\", \"image generateion\"]. If no action needs to be performed, retuan []."
+
+    instruction = ""
+    for item in user_input["content"]:
+        if item["type"] == "text":
+            instruction = instruction + item["text"] + "\n"
+    # if len(instruction) > 0:
+    #     instruction = "<start_of_instruct>\n" + instruction + "<end_of_instruct>\n"
+    # if len(instruction) > 0:
+    #     instruction = "<instruct>\n" + instruction + "</instruct>\n"
+
+    audio_messages = [item for item in user_input["content"] if item["type"] == "audio"]
+    has_audio = len(audio_messages) > 0
+
+    output_text = None 
+    if len(audio_messages) > 0 or len(instruction) > 0:
+        content = []
+        content.extend(audio_messages)
+        question = instruction + question
+        content.append({"type": "text", "text": question})       
+        messages = [
+            {
+                "role": "HUMAN",
+                "content": content
+            }
+        ]
+
+        print("messages:")
+        print(messages)
+
+        output_text, _ = generate_text(model, processor, messages, has_audio=has_audio)
+
+    try:
+        outputs = output_text.replace("[", "").replace("]", "").replace("'", "").replace("\"", "").split(",")
+        tasks = []
+        for output in outputs:
+            task = output.strip().lower()
+            if "text generation" in task:
+                tasks.append("text generation")
+            elif "image generation" in task:
+                tasks.append("image generation")
+    except:
+        tasks = ["text generation"]
+
+    return tasks
 
 
 def generate(model, processor, messages, state, use_audio_response=False):
@@ -203,18 +233,21 @@ def generate(model, processor, messages, state, use_audio_response=False):
 
     text = audio_path = None
     if "text generation" in tasks:
-        text = generate_text(model, processor, messages, has_audio=has_audio)
+        text, outputs = generate_text(model, processor, messages, has_audio=has_audio)
 
         if use_audio_response:
-            audio_path = text_to_speach(model, text)
+            audio_path = text_to_speach(model, text, outputs)
 
     image_path = None
     if "image generation" in tasks:
         image_path = generate_image(model, processor, messages, has_audio=has_audio)
 
     return text, audio_path, image_path
-
 ###########################################################################
+
+
+
+
 
 
 def format_history(history: list):
@@ -556,7 +589,7 @@ with gr.Blocks() as demo:
             [
                 "Draw a girl with short hair"
             ]          
-        ],  
+        ],
         label="Image generation",
         inputs=[text_input],
         outputs=[text_input, audio_input, image_input, video_input, chatbot]
@@ -567,8 +600,8 @@ with gr.Blocks() as demo:
         run_on_click=True,
         examples=[
             [
-                "figures/cases/cake.jpg",
-                "Add candles on top of the cake"
+                "samples/cake.jpg",
+                "Add a candle on top of the cake"
             ]          
         ],
         label="Image editing",

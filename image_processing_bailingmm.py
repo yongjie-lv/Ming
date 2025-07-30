@@ -30,13 +30,13 @@ from transformers.image_transforms import (
     resize,
     to_channel_dimension_format,
 )
+from transformers.video_utils import VideoInput
 from transformers.image_utils import (
     OPENAI_CLIP_MEAN,
     OPENAI_CLIP_STD,
     ChannelDimension,
     ImageInput,
     PILImageResampling,
-    VideoInput,
     get_image_size,
     infer_channel_dimension_format,
     is_scaled_image,
@@ -47,7 +47,7 @@ from transformers.image_utils import (
     validate_preprocess_arguments,
 )
 from transformers.utils import TensorType, is_vision_available, logging
-
+from bailingmm_utils import VideoInput
 logger = logging.get_logger(__name__)
 
 if is_vision_available():

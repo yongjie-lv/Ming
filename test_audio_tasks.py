@@ -214,6 +214,7 @@ if __name__ == "__main__":
     processor, model, audio_detokenizer, audio_frontend = initialize_models(
         model_path=MODEL_PATH, spk_info=spk_info, device=DEVICE
     )
+    model.talker.use_vllm = False
 
     # ASR
     print("Testing ASR...")

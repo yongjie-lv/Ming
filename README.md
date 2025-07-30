@@ -26,12 +26,9 @@ Ming-lite-omni v1.5 is a comprehensive upgrade to the full-modal capabilities of
 
 ## Key Features
 Compared to [Ming-lite-omni](https://github.com/inclusionAI/Ming/tree/v1.0), Ming-lite-omni v1.5 features key optimizations in the following 3 areas:
-- **Enhanced Multimodal Comprehension**: Ming-lite-omni v1.5 now understands all data types—images, text, video, and speech—significantly better, thanks to extensive data upgrades.
-- **Precise Visual Editing Control**: Achieve superior image generation and editing with Ming-lite-omni v1.5, featuring advanced controls for consistent IDs and scenes, and enhanced support for visual tasks like detection and segmentation.
-- **Optimized User Experience**: Expect a smoother, more accurate, and aesthetically pleasing interaction with Ming-lite-omni v1.5.
-
-
-
+- **Enhanced Video Understanding—MRoPE & Curriculum Learning**: Ming-lite-omni v1.5 significantly improves video understanding through MRoPE's 3D spatiotemporal encoding and a curriculum learning strategy for handling long videos, enabling precise comprehension of complex visual sequences.
+- **Refined Multi-modal Generation-Consistency & Perception Control**: Ming-lite-omni v1.5 offers superior generation, featuring dual-branch image generation with ID & Scene Consistency Loss for coherent editing, and perception enhancement for detailed visual control. Its new audio decoder and BPE encoding also deliver high-quality, real-time speech synthesis.
+- **Comprehensive Data Upgrades-Broadened & Refined fine-grained Data**: Ming-lite-omni v1.5's capabilities are built on extensive data upgrades, including new structured text data, expanded high-quality product information, and refined fine-grained visual and speech perception data (including dialects). This provides a richer, more accurate foundation for all modalities.
 
 <p align="center">
     <img src="./figures/ming.png" width="800"/>
@@ -361,6 +358,109 @@ If you find our work helpful, feel free to give us a cite.
       archivePrefix = {arXiv},
       url = {https://arxiv.org/abs/2506.09344}
 }
+```
+## Deployment
+### vLLM
+vLLM supports offline batched inference or launching an OpenAI-Compatible API Service for online inference.
+
+### Environment Preparation
+Since the Pull Request (PR) has not been submitted to the vLLM community at this stage, please prepare the environment by following the steps below:
+```
+git clone -b  v0.8.5 https://github.com/vllm-project/vllm.git
+cd vllm
+git apply Ming/vllm/ming_lite.patch
+pip install -e .
+```
+### Offline Inference
+```
+import os
+os.environ["VLLM_USE_V1"] = "0"
+
+
+import vllm
+from vllm import LLM, SamplingParams
+from vllm.inputs import TextPrompt as LLMInputs
+from transformers import AutoTokenizer, AutoProcessor, AutoConfig
+import sys
+import torch
+
+os.environ['VLLM_WORKER_MULTIPROC_METHOD'] = 'spawn'
+ming_lite_path = "inclusionAI/Ming-lite-1.5"
+
+sys.path.insert(0, ming_lite_path)
+
+if __name__=="__main__":
+    llm = LLM(model=ming_lite_path, trust_remote_code=True, enforce_eager=False, disable_custom_all_reduce=True, tensor_parallel_size=1, limit_mm_per_prompt={"image": 10})
+
+    tokenizer = AutoTokenizer.from_pretrained(ming_lite_path, trust_remote_code=True)
+    processor = AutoProcessor.from_pretrained(ming_lite_path, trust_remote_code=True)
+
+    vision_path = "path/to/vision_path"
+    messages = [
+        {
+            "role": "HUMAN",
+            "content": [
+                {"type": "image", "image": os.path.join(vision_path, "flowers.jpg")},
+                {"type": "text", "text": "这个里面的是什么东西，什么颜色?"},
+            ],
+        },
+    ]
+    text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, use_system=True)
+    image_inputs, video_inputs, audio_inputs = processor.process_vision_info(messages)
+
+    messages = [
+        {
+            "role": "HUMAN",
+            "content": [
+                {"type": "video", "video": os.path.join(vision_path, "yoga.mp4"), 'min_pixels': 100352, 'max_pixels': 602112, "sample": "uniform"},
+                {"type": "text", "text": "What is the woman doing?"},
+            ],
+        },
+    ]
+
+    text_1 = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, use_system=True)
+    image_inputs_1, video_inputs_1, audio_inputs_1 = processor.process_vision_info(messages)
+
+    messages = [
+       {
+           "role": "HUMAN",
+           "content": [
+               {"type": "text", "text": "Please recognize the language of this speech and transcribe it. Format: oral."},
+               {"type": "audio", "audio": '/path/to/BAC009S0915W0292.wav'},
+           ],
+        },
+   ]
+
+    text_2 = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, use_system=True)
+
+    image_inputs_2, video_inputs_2, audio_inputs_2 = processor.process_vision_info(messages)
+
+    message_2 = [
+        {
+            "role": "HUMAN",
+            "content": [
+                {"type": "image", "image": "/path/to/0.jpg"},
+                {"type": "image", "image": "/path/to/1.jpg"},
+                {"type": "image", "image": os.path.join(vision_path, "flowers.jpg")},
+                {"type": "text", "text": "Question: Which option describe the object relationship in the image correctly?\nOptions:\nA. The suitcase is on the book.\nB. The suitcase is beneath the cat.\nC. The suitcase is beneath the bed.\nD. The suitcase is beneath the book.\nPlease select the correct answer from the options above."},
+            ],
+        },
+    ]
+    text_3 = processor.apply_chat_template(message_2, tokenize=False, add_generation_prompt=True, use_system=True)
+    image_inputs_3, video_inputs_3, audio_inputs_3 = processor.process_vision_info(message_2)
+
+
+
+    requests = [LLMInputs({ "prompt": text, "multi_modal_data": {"image": image_inputs} }),
+                LLMInputs({ "prompt": text, "multi_modal_data": {"image": image_inputs} }),
+                LLMInputs({ "prompt": text_3, "multi_modal_data": {"image": image_inputs_3} }),
+                LLMInputs({ "prompt": text_1, "multi_modal_data": {"video": video_inputs_1} }),
+                LLMInputs({ "prompt": text_2, "multi_modal_data": {"audio": audio_inputs_2} }),
+    ]
+    print(requests)
+    sampling_params = SamplingParams(temperature=0, max_tokens=512)
+    outputs = llm.generate(requests, sampling_params)
+    print(outputs)
 ```
 
 

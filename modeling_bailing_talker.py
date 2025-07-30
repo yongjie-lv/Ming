@@ -23,7 +23,8 @@ from configuration_bailing_talker import BailingTalkerConfig
 from transformers.utils import ModelOutput
 from sentence_manager.sentence_manager import SentenceNormalizer
 import logging
-
+from talker.talker_vllm_client import VLLMClient
+from talker.sync_vllm_infer import construct_vllm, vllm_infer_generator, SamplingParams, get_vllm_request_id
 
 @dataclass
 class BailingTalkerOutputWithPast(ModelOutput):
@@ -44,9 +45,15 @@ class BailingTalkerForConditionalGeneration(PreTrainedModel):
         self.config = config
         self.vocab_size = self.config.vocab_size
         self.tokenizer = AutoTokenizer.from_pretrained(self.config._name_or_path)
+        self.tokenizer_len = len(self.tokenizer)
+        if self.tokenizer_len == 184445:
+            # for vllm, tokenizer contains audio codec token
+            self.tokenizer_len = self.tokenizer_len  - 32768
         self.model_config = Qwen2Config.from_pretrained(self.config._name_or_path)
+        if self.model_config.vocab_size == 151936:
+            # give up resize embedding operation
+            self.model_config.vocab_size = 184445
         self.model = Qwen2ForCausalLM(self.model_config)
-        self.model.resize_token_embeddings(self.vocab_size)
         self.thinker_to_talker_proj = nn.Linear(self.config.qa_model_hidden_size, self.model_config.hidden_size)
         self.vp_head = nn.Conv1d(
             self.config.vp_feature_size,
@@ -60,6 +67,7 @@ class BailingTalkerForConditionalGeneration(PreTrainedModel):
         self.loss_function = nn.CrossEntropyLoss()
         
         default_config_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "sentence_manager/default_config.yaml")
+        # print(f"default_config_path: {default_config_path}")
         self.sentence_manager_config = yaml.safe_load(open(default_config_path))
         if "split_token" not in self.sentence_manager_config:
             self.sentence_manager_config["split_token"] = []
@@ -77,7 +85,34 @@ class BailingTalkerForConditionalGeneration(PreTrainedModel):
         self.llm_end_dict = {}
         self.hift_cache_dict = {}
 
+        self.use_vllm = True # 是否使用 vllm，或者 torch
+        self.vllm_in_process = False # 使用同一进程下的 vllm engine
+        self.vllm_engine = None
+
+        if self.use_vllm:
+            if self.vllm_in_process:
+                self.vllm_engine = construct_vllm(
+                    model_path=self.config._name_or_path, 
+                    enforce_eager=False, 
+                    gpu_memory_utilization=0.2)
+            
+
+        
+        # if self.use_vllm:
+        #     original_embeds = self.model.get_input_embeddings()
+        #     vocab_size, embed_dim = original_embeds.weight.shape
+        #     original_embeds.pad
+        #     src_weight = self.model.get_input_embeddings().weight.data
+        # 
+        #     # 初始化新嵌入层（权重随机）
+        #     self.input_embeds = nn.Embedding(vocab_size, embed_dim)
+        #     self.input_embeds.weight.data.copy_(src_weight)
+        #     del self.model
+
     def get_input_embeddings(self):
+        # if self.use_vllm:
+        #     return self.input_embeds
+        # else:
         return self.model.get_input_embeddings()
 
     def encode_audio_segments(
@@ -244,48 +279,91 @@ class BailingTalkerForConditionalGeneration(PreTrainedModel):
         result = []
         step = 0
         eos_id = self.tokenizer.encode("<audio_eos>")[0]
-        while step < 1000:
-            if step == 0:
-                talker_audio_input_ids = talker_audio_prefix
-                talker_text_input_ids = talker_text_prefix
-                attention_mask = torch.ones(talker_audio_input_ids.shape).to(talker_audio_prefix.device)
 
-            else:
-                talker_audio_input_ids = next_token
-                talker_text_input_ids = torch.tensor(talker_text_input_part[0], dtype=torch.long).reshape(1, -1).to(
-                    talker_audio_prefix.device)
-                attention_mask = torch.ones(next_token.shape[0], 1).to(talker_audio_prefix.device)
-                position_ids = (position_ids[0][-1] + 1).view(1,-1)
-                thinker_prefix_insert_loc = None
-
-                if len(talker_text_input_part) > 1:
-                    talker_text_input_part = talker_text_input_part[1:]
-
-            outputs = self(
-                input_ids=talker_audio_input_ids,
-                text_input_ids=talker_text_input_ids,
-                thinker_reply_part=thinker_reply_part,
-                thinker_reply_length=thinker_reply_length,
-                thinker_prefix_insert_loc=thinker_prefix_insert_loc,
-                vp_emb=vp_emb,
-                vp_insert_loc=vp_insert_loc,
-                attention_mask=attention_mask,
-                position_ids=position_ids,
-                use_cache=True,
-                past_key_values=outputs.past_key_values if step > 0 else None
+        def get_prompt_embeds(input_ids, text_input_ids, vp_emb, vp_insert_loc, thinker_reply_length):
+            audio_input_embeds = self.get_input_embeddings()(input_ids)
+            text_input_embeds = self.get_input_embeddings()(text_input_ids)
+            inputs_embeds = audio_input_embeds + text_input_embeds
+        
+            inputs_embeds = self.encode_audio_segments(
+                inputs_embeds, vp_emb, vp_insert_loc, thinker_reply_part=thinker_reply_part,
+                thinker_reply_length=thinker_reply_length, thinker_prefix_insert_loc=thinker_prefix_insert_loc
             )
-            # 采样
-            logits = outputs.logits[:, -1, :]
-            if step < min_new_token:
-                refuse = True
-            else:
-                refuse = False
-            next_token = self.sample(logits, refuse=refuse)
-            if next_token.item() == eos_id:
-                break
+            return inputs_embeds
 
-            yield [next_token.item()]
-            step += 1
+        if self.use_vllm:
+            prompt_tokens = talker_audio_prefix[0].cpu().tolist()
+            inputs_embeds = get_prompt_embeds(talker_audio_prefix, talker_text_prefix, vp_emb=vp_emb, vp_insert_loc=vp_insert_loc, thinker_reply_length=thinker_reply_length)[0] # (90, 896, )
+            if self.vllm_in_process:
+                sampling_params = SamplingParams(
+                    top_k=20,
+                    skip_special_tokens=True,
+                    max_tokens=1024,
+                    min_tokens=10,
+                    stop=["<audio_eos>"]
+                )
+                output_generator = vllm_infer_generator(self.vllm_engine, prompt_tokens, inputs_embeds, get_vllm_request_id(), sampling_params)
+                for result in output_generator:
+                    if result['finish_reason'] == "stop":
+                        break
+                    yield [result['token_ids']]
+            else:
+                with VLLMClient("http://localhost:8816") as client:
+                    for result in client.generate(
+                        prompt_token_ids=prompt_tokens,
+                        prompt_embeds=inputs_embeds,
+                        top_k=20,
+                        min_tokens=10,
+                        max_tokens=1024,
+                        stream=True
+                    ):
+                        if 'finish_reason' in result and result['finish_reason'][0] == "stop":
+                            break
+                        yield result['token_ids']
+        else:
+                
+            while step < 1000:
+                if step == 0:
+                    talker_audio_input_ids = talker_audio_prefix
+                    talker_text_input_ids = talker_text_prefix
+                    attention_mask = torch.ones(talker_audio_input_ids.shape).to(talker_audio_prefix.device)
+
+                else:
+                    talker_audio_input_ids = next_token
+                    talker_text_input_ids = torch.tensor(talker_text_input_part[0], dtype=torch.long).reshape(1, -1).to(
+                        talker_audio_prefix.device)
+                    attention_mask = torch.ones(next_token.shape[0], 1).to(talker_audio_prefix.device)
+                    position_ids = (position_ids[0][-1] + 1).view(1,-1)
+                    thinker_prefix_insert_loc = None
+
+                    if len(talker_text_input_part) > 1:
+                        talker_text_input_part = talker_text_input_part[1:]
+
+                outputs = self(
+                    input_ids=talker_audio_input_ids,
+                    text_input_ids=talker_text_input_ids,
+                    thinker_reply_part=thinker_reply_part,
+                    thinker_reply_length=thinker_reply_length,
+                    thinker_prefix_insert_loc=thinker_prefix_insert_loc,
+                    vp_emb=vp_emb,
+                    vp_insert_loc=vp_insert_loc,
+                    attention_mask=attention_mask,
+                    position_ids=position_ids,
+                    use_cache=True,
+                    past_key_values=outputs.past_key_values if step > 0 else None
+                )
+                # 采样
+                logits = outputs.logits[:, -1, :]
+                if step < min_new_token:
+                    refuse = True
+                else:
+                    refuse = False
+                next_token = self.sample(logits, refuse=refuse)
+                if next_token.item() == eos_id:
+                    break
+
+                yield [next_token.item()]
+                step += 1
 
     def omni_audio_generation_func(
         self,
@@ -318,7 +396,7 @@ class BailingTalkerForConditionalGeneration(PreTrainedModel):
             self.tokenizer.encode("<text_pad>")
         )
         talker_text_prefix = torch.tensor(talker_text_prefix).reshape(1, -1).to(self.device)
-    
+        record_list = []
         for audio_token in self.generate(
             talker_audio_prefix=talker_audio_prefix,
             talker_text_prefix=talker_text_prefix,
@@ -331,10 +409,14 @@ class BailingTalkerForConditionalGeneration(PreTrainedModel):
             thinker_prefix_insert_loc=torch.tensor([len(prompt) + 1]).to(self.device) if thinker_reply_part is not None else None,
             prompt_wav_token_len=prompt_wav_token_len,
         ):
-            audio_token = [ele - len(self.tokenizer) for ele in audio_token]
+            audio_token = [ele - self.tokenizer_len for ele in audio_token]
             audio_token = self.s3bpe_tokenizer.decode(audio_token)
 
             yield audio_token
+            record_list += audio_token
+
+        if len(record_list) == 0:
+            yield [0, 0, 0]
 
     def token2wav(self, audio_detokenizer, token, prompt_token, prompt_feat, embedding, token_offset, uuid, stream=False, finalize=False, speed=1.0):
         self.fp16 = audio_detokenizer.model.fp16
@@ -500,7 +582,7 @@ class BailingTalkerForConditionalGeneration(PreTrainedModel):
         prompt_text_input_part = self.tokenizer.encode(prompt_text)
         prompt_wav_token = kwargs["prompt_speech_token"][0].tolist()
         prompt_wav_token_bpe = self.s3bpe_tokenizer.encode(prompt_wav_token)[0]
-        prompt_wav_token_bpe = (np.array(prompt_wav_token_bpe, dtype=np.int64) + len(self.tokenizer) ).tolist()
+        prompt_wav_token_bpe = (np.array(prompt_wav_token_bpe, dtype=np.int64) + self.tokenizer_len ).tolist()
 
         # thinker_reply_part: [B, T, d]
         # get text_emb and hidden_states from thinker
