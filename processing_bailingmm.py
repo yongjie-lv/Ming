@@ -27,11 +27,11 @@ else:
     from typing_extensions import Unpack
 
 from transformers.feature_extraction_utils import BatchFeature
-from transformers.image_utils import ImageInput, VideoInput
+from transformers.image_utils import ImageInput
 from transformers.processing_utils import ProcessingKwargs, ProcessorMixin
 from transformers.tokenization_utils_base import PreTokenizedInput, TextInput
 
-from bailingmm_utils import process_vision_info, process_ratio
+from bailingmm_utils import process_vision_info, process_ratio, VideoInput
 import torchvision
 
 DEFAULT_IMAGE_PATCH_TOKEN = "<imagePatch>"

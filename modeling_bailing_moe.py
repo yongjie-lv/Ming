@@ -41,6 +41,7 @@ from transformers.modeling_outputs import (
     MoeModelOutputWithPast,
 )
 from transformers.modeling_utils import PreTrainedModel
+from transformers.generation import GenerationMixin
 from transformers.pytorch_utils import (
     ALL_LAYERNORM_LAYERS,
     is_torch_greater_or_equal_than_1_13,
@@ -1166,6 +1167,9 @@ class BailingMoePreTrainedModel(PreTrainedModel):
             module.weight.data.normal_(mean=0.0, std=std)
             if module.padding_idx is not None:
                 module.weight.data[module.padding_idx].zero_()
+    
+    def __init__(self, config: BailingMoeConfig):
+        super().__init__(config)
 
 
 BAILINGMOE_INPUTS_DOCSTRING = r"""
@@ -1426,7 +1430,7 @@ class BailingMoeModel(BailingMoePreTrainedModel):
         )
 
 
-class BailingMoeForCausalLM(BailingMoePreTrainedModel):
+class BailingMoeForCausalLM(BailingMoePreTrainedModel, GenerationMixin):
     _tied_weights_keys = ["lm_head.weight"]
 
     def __init__(self, config: BailingMoeConfig):

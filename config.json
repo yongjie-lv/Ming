@@ -28,7 +28,7 @@
     "audio_wav_frontend_config_sanm": {},
     "ds_conv_type": "conv",
     "ds_kernel_size": 3,
-    "ds_stride": 1,
+    "ds_stride": 2,
     "model_type": "bailingmm",
     "norm_query_embeds": true,
     "use_audio_bpe_token": false,
