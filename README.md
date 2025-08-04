@@ -26,9 +26,12 @@ Ming-lite-omni v1.5 is a comprehensive upgrade to the full-modal capabilities of
 
 ## Key Features
 Compared to [Ming-lite-omni](https://github.com/inclusionAI/Ming/tree/v1.0), Ming-lite-omni v1.5 features key optimizations in the following 3 areas:
-- **Enhanced Video Understanding—MRoPE & Curriculum Learning**: Ming-lite-omni v1.5 significantly improves video understanding through MRoPE's 3D spatiotemporal encoding and a curriculum learning strategy for handling long videos, enabling precise comprehension of complex visual sequences.
-- **Refined Multi-modal Generation-Consistency & Perception Control**: Ming-lite-omni v1.5 offers superior generation, featuring dual-branch image generation with ID & Scene Consistency Loss for coherent editing, and perception enhancement for detailed visual control. Its new audio decoder and BPE encoding also deliver high-quality, real-time speech synthesis.
-- **Comprehensive Data Upgrades-Broadened & Refined fine-grained Data**: Ming-lite-omni v1.5's capabilities are built on extensive data upgrades, including new structured text data, expanded high-quality product information, and refined fine-grained visual and speech perception data (including dialects). This provides a richer, more accurate foundation for all modalities.
+- **Enhanced Multimodal Comprehension**: Ming-lite-omni v1.5 now understands all data types—images, text, video, and speech—significantly better, thanks to extensive data upgrades.
+- **Precise Visual Editing Control**: Achieve superior image generation and editing with Ming-lite-omni v1.5, featuring advanced controls for consistent IDs and scenes, and enhanced support for visual tasks like detection and segmentation.
+- **Optimized User Experience**: Expect a smoother, more accurate, and aesthetically pleasing interaction with Ming-lite-omni v1.5.
+
+
+
 
 <p align="center">
     <img src="./figures/ming.png" width="800"/>
