@@ -168,9 +168,10 @@ You can download our latest model from both Huggingface and ModelScope. For prev
 
 <div align="center">
 
-| **Model**          |   **Input modality**   | **Oput modality** |                                                                         **Download**                                                                         |
-|:-------------------|:----------------------:| :---------------: |:------------------------------------------------------------------------------------------------------------------------------------------------------------:|
-| Ming-Lite-Omni-1.5 | Image,text,video,audio | Image,text,audio  | [🤗 HuggingFace](https://huggingface.co/inclusionAI/Ming-Lite-Omni-1.5) <br>[🤖 ModelScope](https://www.modelscope.cn/models/inclusionAI/Ming-Lite-Omni-1.5) |
+| **Model**              |   **Input modality**   | **Oput modality** |                                                                         **Download**                                                                         |
+|:-----------------------|:----------------------:| :---------------: |:------------------------------------------------------------------------------------------------------------------------------------------------------------:|
+| Ming-Lite-Omni-1.5-FP8 | Image,text,video,audio | Image,text,audio  | [🤗 HuggingFace](https://huggingface.co/inclusionAI/Ming-lite-omni-1.5-FP8/tree/main) <br>[🤖 ModelScope](https://www.modelscope.cn/models/inclusionAI/Ming-lite-omni-1.5-FP8/files) |
+| Ming-Lite-Omni-1.5     | Image,text,video,audio | Image,text,audio  | [🤗 HuggingFace](https://huggingface.co/inclusionAI/Ming-Lite-Omni-1.5) <br>[🤖 ModelScope](https://www.modelscope.cn/models/inclusionAI/Ming-Lite-Omni-1.5) |
 </div>
 If you're in mainland China, we strongly recommend you to download our model from 🤖 <a href="https://www.modelscope.cn/models/inclusionAI/Ming-Lite-Omni-1.5">ModelScope</a>.
 
@@ -238,6 +239,7 @@ Download our model following [Model Downloads](#model-downloads)
 ```shell
 mkdir inclusionAI 
 ln -s /path/to/inclusionAI/Ming-Lite-Omni-1.5 inclusionAI/Ming-Lite-Omni
+ln -s /path/to/inclusionAI/Ming-Lite-Omni-1.5-FP8 inclusionAI/Ming-Lite-Omni-FP8
 ```
 
 Step 3 - Enter the code directory, you can refer to the following codes to run the Ming-Lite-Omni model.
@@ -342,30 +344,10 @@ python gradio_demo.py
 ```
 
 
-
-## License and Legal Disclaimer
-
-This code repository is licensed under the [MIT License](./LICENSE), and the Legal Disclaimer is located in the [LEGAL.md file](./LEGAL.md) under the project's root directory.
-
-## Citation
-
-If you find our work helpful, feel free to give us a cite.
-
-```bibtex
-
-@misc{Mingomni2025,
-      title  = {Ming-Omni: A Unified Multimodal Model for Perception and Generation}, 
-      author = {Inclusion AI},
-      year = {2025},
-      eprint = {2506.09344},
-      archivePrefix = {arXiv},
-      url = {https://arxiv.org/abs/2506.09344}
-}
-```
 ## Deployment
 
 ### download model checkpoint
-download model ckeckpoint from huggingface or modelscope to local **YOUR_LOCAL_PATH**, and install vllm library
+download model ckeckpoint from huggingface or modelscope to local **inclusionAI/Ming-Lite-Omni-FP8**, and install vllm library
 
 ### install python dependencies
 
@@ -384,8 +366,8 @@ Since the Pull Request (PR) has not been submitted to the vLLM community at this
 
 #### Installation with pip
 ```
-pip install ${YOUR_MODEL_PATH}/flash_attn-2.7.0.post1%2Bcu12torch2.4cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
-pip install ${YOUR_MODEL_PATH}/vllm-0.8.6.dev1+ga37daf9e9.d20250730-cp310-cp310-linux_x86_64.whl
+pip install inclusionAI/Ming-Lite-Omni-FP8/flash_attn-2.7.0.post1%2Bcu12torch2.4cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
+pip install inclusionAI/Ming-Lite-Omni-FP8/vllm-0.8.6.dev1+ga37daf9e9.d20250730-cp310-cp310-linux_x86_64.whl
 ```
 
 #### build from source
@@ -411,7 +393,7 @@ Before starting the vLLM inference, first launch the talker service. Note that d
 
 
 ```
-MODEL_PATH=${YOUR_MODEL_PATH}
+MODEL_PATH=inclusionAI/Ming-Lite-Omni-FP8
 python talker/talker_vllm_server.py --model ${MODEL_PATH}/talker --gpu-memory-utilization 0.1 --port 8816
 ```
 
@@ -447,5 +429,24 @@ Replace the rope_scaling in HuggingFace version with this config.json file:
      
 ```
 
+## License and Legal Disclaimer
+
+This code repository is licensed under the [MIT License](./LICENSE), and the Legal Disclaimer is located in the [LEGAL.md file](./LEGAL.md) under the project's root directory.
+
+## Citation
+
+If you find our work helpful, feel free to give us a cite.
+
+```bibtex
+
+@misc{Mingomni2025,
+      title  = {Ming-Omni: A Unified Multimodal Model for Perception and Generation}, 
+      author = {Inclusion AI},
+      year = {2025},
+      eprint = {2506.09344},
+      archivePrefix = {arXiv},
+      url = {https://arxiv.org/abs/2506.09344}
+}
+```
 
 

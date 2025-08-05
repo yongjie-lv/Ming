@@ -2,12 +2,14 @@ import os
 import torch
 import uuid
 import re
-
+import torchaudio
 import gradio as gr
-from gradio_client import utils as client_utils
 
+from gradio_client import utils as client_utils
+from hyperpyyaml import load_hyperpyyaml
 from transformers import AutoProcessor, GenerationConfig
 from modeling_bailingmm import BailingMMNativeForConditionalGeneration
+from audio_detokenizer.cli.frontend import TTSFrontEnd
 from modeling_bailing_talker import AudioDetokenizer
 
 
@@ -20,9 +22,29 @@ model = BailingMMNativeForConditionalGeneration.from_pretrained(
     low_cpu_mem_usage=True,
     load_image_gen=True
 ).to("cuda")
+model.talker.use_vllm = False
 
 # build processor
 processor = AutoProcessor.from_pretrained(".", trust_remote_code=True)
+
+with open(f"{model_path}/talker/audio_detokenizer_stream.yaml", "r") as f:
+    configs = load_hyperpyyaml(f)
+
+spk_info = {
+    'luna': torch.load('data/spks/luna_v2.pt'),
+    'eng': torch.load('data/spks/eng_v2.pt'),
+}
+audio_detokenizer = AudioDetokenizer(
+    f"{model_path}/talker/audio_detokenizer_stream.yaml",
+    flow_model_path=f"{model_path}/talker/flow_stream.pt",
+    hifigan_model_path=f"{model_path}/talker/hift_v2.pt",
+    spk_info=spk_info,
+)
+audio_frontend = TTSFrontEnd(
+    configs["feat_extractor"],
+    f"{model_path}/talker/campplus.onnx",
+    f"{model_path}/talker/speech_tokenizer_v1.onnx",
+)
 
 
 ################################## demo utils ###################################
@@ -53,12 +75,12 @@ def process_inputs(model, processor, messages, has_audio=False):
             audios=audio_inputs,
             return_tensors="pt"
         )
-    
+
     inputs = inputs.to(model.device)
     for k in inputs.keys():
         if k == "pixel_values" or k == "pixel_values_videos" or k == "audio_feats":
             inputs[k] = inputs[k].to(dtype=torch.bfloat16)
-    
+
     return inputs
 
 
@@ -73,16 +95,8 @@ def generate_text(model, processor, messages, has_audio=False):
     generation_config = GenerationConfig.from_dict({
         "no_repeat_ngram_size": 10
     })
-    outputs = None
-    if not has_audio:
-        generated_ids = model.generate(
-            **inputs,
-            max_new_tokens=512,
-            use_cache=True,
-            eos_token_id=processor.gen_terminator,
-            generation_config=generation_config
-        )
-    else:
+
+    if has_audio:
         generated_ids = model.generate(
             **inputs,
             max_new_tokens=512,
@@ -90,7 +104,15 @@ def generate_text(model, processor, messages, has_audio=False):
             eos_token_id=processor.gen_terminator,
             generation_config=generation_config,
             use_whisper_encoder=True
-        )        
+        )
+    else:
+        generated_ids = model.generate(
+            **inputs,
+            max_new_tokens=512,
+            use_cache=True,
+            eos_token_id=processor.gen_terminator,
+            generation_config=generation_config
+        )
 
     # generated_ids = outputs.sequences
     generated_ids_trimmed = [
@@ -99,8 +121,8 @@ def generate_text(model, processor, messages, has_audio=False):
     output_text = processor.batch_decode(
         generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
     )[0]
-    
-    return output_text, outputs
+
+    return output_text
 
 
 def generate_image(model, processor, messages, has_audio=False):
@@ -114,9 +136,10 @@ def generate_image(model, processor, messages, has_audio=False):
     image_gen_param = {
         "image_gen_cfg": 6.0,
         "image_gen_steps": 20,
-        "image_gen_width": 512,
-        "image_gen_height": 512
+        # "image_gen_width": 512,
+        # "image_gen_height": 512
     }
+
     image = model.generate(
         **inputs,
         image_gen=True,
@@ -133,29 +156,27 @@ def contains_chinese(text):
     return bool(re.search(r'[\u4e00-\u9fff]', text))
 
 
-def text_to_speach(model, output_text, outputs):
-    model_name_or_path = model.config._name_or_path
-    audio_detokenizer = AudioDetokenizer(
-        f'{model_name_or_path}/talker/audio_detokenizer.yaml',
-        flow_model_path=f'{model_name_or_path}/talker/flow.pt',
-        hifigan_model_path=f'{model_name_or_path}/talker/hift.pt'
-    )
+def text_to_speach(model, output_text, stream=False):
+    # if contains_chinese(output_text):
+    #     spk_input = torch.load('data/spks/luna.pt')
+    # else:
+    #     spk_input = torch.load('data/spks/luna_eng.pt')
+    is_chinese = contains_chinese(output_text)
+    if not is_chinese:
+        output_text = output_text.split()
 
-    if contains_chinese(output_text):
-        spk_input = torch.load('data/spks/luna.pt')
-    else:
-        spk_input = torch.load('data/spks/luna_eng.pt')
+    speaker = 'luna' if is_chinese else 'eng'
+    spk_input = spk_info.get(speaker, "luna")
 
-    if outputs is not None:
-        thinker_reply_part = outputs.hidden_states[0][0] + outputs.hidden_states[0][-1]
-    else:
-        thinker_reply_part = None
-    # Setting thinker_reply_part to None allows the talker to operate as a standalone TTS model, independent of the language model.
-    audio_tokens = model.talker.omni_audio_generation(
-        output_text, 
-        thinker_reply_part=thinker_reply_part, **spk_input)
+    all_wavs = []
+    for tts_speech, _ in model.talker.omni_audio_generation(
+        output_text, audio_detokenizer=audio_detokenizer, thinker_reply_part=None, speaker=speaker, stream=stream, **spk_input
+    ):
+        all_wavs.append(tts_speech)
+    waveform = torch.cat(all_wavs, dim=-1)
+
     audio_path = os.path.join(cache_dir, f"{uuid.uuid4()}.wav")
-    waveform = audio_detokenizer.token2wav(audio_tokens, save_path=audio_path, **spk_input)
+    torchaudio.save(audio_path, waveform, audio_detokenizer.sr)
 
     return audio_path
 
@@ -167,56 +188,6 @@ def find_audio(messages):
                 return True
 
     return False
-
-
-def infer_user_intent(model, processor, user_input):  
-    # question = "Based on the user instruction between <start_of_instruct> and <end_of_instruct> or provided in the audio, infer the actions to perform. If the task only needs to generate a text response, return a list of [\"text generation\"]. If the tasks only needs to generate an image, return a list of [\"image generation\"]. If the task needs to generate both a text response and an image, return a list of [\"text generation\", \"image generateion\"]. If no action needs to be performed, retuan []."
-    question = "Based on the user instruction given between <instruct> and </instruct> or provided in the audio, infer the actions to perform. If the task only needs to generate a text response, return a list of [\"text generation\"]. If the tasks only needs to generate an image, return a list of [\"image generation\"]. If the task needs to generate both a text response and an image, return a list of [\"text generation\", \"image generateion\"]. If no action needs to be performed, retuan []."
-    question = "According to the text above or the provided audio, infer the actions to perform. If the task only needs to generate a text response, return a list of [\"text generation\"]. If the tasks only needs to generate an image, return a list of [\"image generation\"]. If the task needs to generate both a text response and an image, return a list of [\"text generation\", \"image generateion\"]. If no action needs to be performed, retuan []."
-
-    instruction = ""
-    for item in user_input["content"]:
-        if item["type"] == "text":
-            instruction = instruction + item["text"] + "\n"
-    # if len(instruction) > 0:
-    #     instruction = "<start_of_instruct>\n" + instruction + "<end_of_instruct>\n"
-    # if len(instruction) > 0:
-    #     instruction = "<instruct>\n" + instruction + "</instruct>\n"
-
-    audio_messages = [item for item in user_input["content"] if item["type"] == "audio"]
-    has_audio = len(audio_messages) > 0
-
-    output_text = None 
-    if len(audio_messages) > 0 or len(instruction) > 0:
-        content = []
-        content.extend(audio_messages)
-        question = instruction + question
-        content.append({"type": "text", "text": question})       
-        messages = [
-            {
-                "role": "HUMAN",
-                "content": content
-            }
-        ]
-
-        print("messages:")
-        print(messages)
-
-        output_text, _ = generate_text(model, processor, messages, has_audio=has_audio)
-
-    try:
-        outputs = output_text.replace("[", "").replace("]", "").replace("'", "").replace("\"", "").split(",")
-        tasks = []
-        for output in outputs:
-            task = output.strip().lower()
-            if "text generation" in task:
-                tasks.append("text generation")
-            elif "image generation" in task:
-                tasks.append("image generation")
-    except:
-        tasks = ["text generation"]
-
-    return tasks
 
 
 def generate(model, processor, messages, state, use_audio_response=False):
@@ -233,21 +204,19 @@ def generate(model, processor, messages, state, use_audio_response=False):
 
     text = audio_path = None
     if "text generation" in tasks:
-        text, outputs = generate_text(model, processor, messages, has_audio=has_audio)
+        text = generate_text(model, processor, messages, has_audio=has_audio)
 
         if use_audio_response:
-            audio_path = text_to_speach(model, text, outputs)
+            audio_path = text_to_speach(model, text)
 
     image_path = None
     if "image generation" in tasks:
         image_path = generate_image(model, processor, messages, has_audio=has_audio)
 
     return text, audio_path, image_path
+
+
 ###########################################################################
-
-
-
-
 
 
 def format_history(history: list):
@@ -263,7 +232,7 @@ def format_history(history: list):
                 messages[-1]["content"].append({"type": "text", "text": message})
             else:
                 messages.append({
-                    "role": role, 
+                    "role": role,
                     "content": [{"type": "text", "text": message}]
                 })
         elif role == "HUMAN" and (isinstance(message, list) or isinstance(message, tuple)):
@@ -336,10 +305,10 @@ def chat_predict(text, audio, image, video, history, use_audio_response, state):
         history.append((None, text))
 
     if audio_path:
-        history.append((None, (audio_path, )))
+        history.append((None, (audio_path,)))
 
     if image_path:
-        history.append((None, (image_path, )))
+        history.append((None, (image_path,)))
 
     yield gr.skip(), gr.skip(), gr.skip(), gr.skip(), history, gr.update(visible=True), gr.update(visible=False)
 
@@ -368,11 +337,11 @@ with gr.Blocks() as demo:
     gr.Markdown(
         """
         # Ming-Lite-Omni Demo
-        
+
         ## Instructions for use
-        
-        1. Upload an image, video or audio clip. 
-        
+
+        1. Upload an image, video or audio clip.
+
         2. The instruction is input via the text or audio clip.
 
         3. Click on the Submit button and wait for the model's response.
@@ -386,19 +355,19 @@ with gr.Blocks() as demo:
     # Media upload section in one row
     with gr.Row(equal_height=True):
         audio_input = gr.Audio(sources=["upload"],
-                                type="filepath",
-                                label="Upload Audio",
-                                elem_classes="media-upload",
-                                scale=1)
+                               type="filepath",
+                               label="Upload Audio",
+                               elem_classes="media-upload",
+                               scale=1)
         image_input = gr.Image(sources=["upload"],
-                                type="filepath",
-                                label="Upload Image",
-                                elem_classes="media-upload",
-                                scale=1)
+                               type="filepath",
+                               label="Upload Image",
+                               elem_classes="media-upload",
+                               scale=1)
         video_input = gr.Video(sources=["upload"],
-                                label="Upload Video",
-                                elem_classes="media-upload",
-                                scale=1)
+                               label="Upload Video",
+                               elem_classes="media-upload",
+                               scale=1)
 
     # Text input section
     text_input = gr.Textbox(show_label=False,
@@ -504,7 +473,7 @@ with gr.Blocks() as demo:
         examples=[
             [
                 "请详细介绍鹦鹉的生活习性"
-            ],           
+            ],
         ],
         label="Text QA",
         inputs=[text_input],
@@ -518,7 +487,7 @@ with gr.Blocks() as demo:
             [
                 "figures/cases/flower.jpg",
                 "What kind of flower is this?"
-            ],           
+            ],
         ],
         label="Image QA",
         inputs=[image_input, text_input],
@@ -532,8 +501,8 @@ with gr.Blocks() as demo:
             [
                 "figures/cases/yoga.mp4",
                 "What is the woman doing?"
-                
-            ],           
+
+            ],
         ],
         label="Video QA",
         inputs=[video_input, text_input],
@@ -544,7 +513,7 @@ with gr.Blocks() as demo:
         fn=fill_in_image_qa_example,
         run_on_click=True,
         examples=[
-            [    
+            [
                 "figures/cases/reasoning.png",
                 "SYSTEM: You are a helpful assistant. When the user asks a question, your response must include two parts: first, the reasoning process enclosed in <thinking>...</thinking> tags, then the final answer enclosed in <answer>...</answer> tags. The critical answer or key result should be placed within \\boxed{}.\nPlease answer the question and provide the correct option letter, e.g., A, B, C, D, at the end.\nQuestion: Find $m\\angle H$\nChoices:\n(A) 97\n(B) 102\n(C) 107\n(D) 122.\n"
             ],
@@ -561,8 +530,8 @@ with gr.Blocks() as demo:
             [
                 "data/wavs/BAC009S0915W0283.wav",
                 "Please recognize the language of this speech and transcribe it. Format: oral."
-                
-            ],           
+
+            ],
         ],
         label="Automatic speech recognition (ASR)",
         inputs=[audio_input, text_input],
@@ -575,7 +544,7 @@ with gr.Blocks() as demo:
         examples=[
             [
                 "data/wavs/speechQA_sample.wav"
-            ]          
+            ]
         ],
         label="Speech to speech",
         inputs=[audio_input],
@@ -588,7 +557,7 @@ with gr.Blocks() as demo:
         examples=[
             [
                 "Draw a girl with short hair"
-            ]          
+            ]
         ],
         label="Image generation",
         inputs=[text_input],
@@ -600,9 +569,9 @@ with gr.Blocks() as demo:
         run_on_click=True,
         examples=[
             [
-                "samples/cake.jpg",
-                "Add a candle on top of the cake"
-            ]          
+                "figures/cases/cake.jpg",
+                "Add candles on top of the cake"
+            ]
         ],
         label="Image editing",
         inputs=[image_input, text_input],
